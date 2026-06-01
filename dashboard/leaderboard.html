@@ -235,8 +235,13 @@
       padding: 0.08rem 0.4rem; border-radius: 5px;
       text-transform: uppercase;
     }
-    .flag-mcp     { background: rgba(0,82,255,.12); color: var(--accent-base); }
-    .flag-limited { background: rgba(245,166,35,.15); color: #B57100; }
+    .flag-mcp           { background: rgba(0,82,255,.12);   color: var(--accent-base); }
+    .flag-limited       { background: rgba(245,166,35,.15); color: #B57100; }
+    /* v0.4.0 badges */
+    .flag-acp           { background: rgba(0,192,135,.15);  color: var(--accent-success); }
+    .flag-non-custodial { background: rgba(0,192,135,.12);  color: #047857; }
+    .flag-fund-transfer { background: rgba(255,68,68,.15);  color: #B91C1C; }
+    .flag-evaluator     { background: rgba(0,82,255,.12);   color: var(--accent-base); }
 
     /* Score */
     .score-num {
@@ -424,8 +429,12 @@ function _render() {
     const critClass = a.critical_fails > 0 ? 'crit-some' : 'crit-zero';
     const tokenTag  = a.token ? `<span class="agent-token">${a.token}</span>` : '';
     const flags = [];
-    if (a.base_mcp)     flags.push('<span class="flag flag-mcp">⚡ Base MCP</span>');
-    if (a.limited_scan) flags.push('<span class="flag flag-limited">Limited</span>');
+    if (a.base_mcp)       flags.push('<span class="flag flag-mcp" title="Base MCP partner">⚡ Base MCP</span>');
+    if (a.acp_registered) flags.push('<span class="flag flag-acp" title="On-chain ACP registration verified">✅ ACP Registered</span>');
+    if (a.custodial === false) flags.push('<span class="flag flag-non-custodial" title="User retains custody of keys">🔐 Non-Custodial</span>');
+    if (a.fund_transfer)  flags.push('<span class="flag flag-fund-transfer" title="Agent moves user funds — elevated risk">💸 Fund Transfer</span>');
+    if (a.evaluator)      flags.push('<span class="flag flag-evaluator" title="Third-party verification role declared">⚖️ Has Evaluator</span>');
+    if (a.limited_scan)   flags.push('<span class="flag flag-limited" title="Limited scan — no website provided">Limited</span>');
     const flagsHtml = flags.length ? `<div class="agent-flags">${flags.join('')}</div>` : '';
 
     return `

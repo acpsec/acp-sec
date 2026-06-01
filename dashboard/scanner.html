@@ -885,6 +885,22 @@
         </div>
       </div>
 
+      <!-- v0.4.0 — Optional agent wallet for on-chain ACP registration check -->
+      <div class="field-group">
+        <label class="field-label" for="walletInput">
+          Agent Wallet Address <span style="color:var(--text-tertiary);font-weight:400">(optional, Base/EVM)</span>
+        </label>
+        <input type="text" id="walletInput" class="text-input"
+               placeholder="0x… (42 hex chars)"
+               onkeydown="if(event.key==='Enter') startScan()"
+               style="font-family:monospace;font-size:.85rem"/>
+        <div class="field-hint">
+          If provided, we'll query Base mainnet for ACP Core registration
+          (<code>0x238E…32E0</code>) and surface an
+          <strong>ACP REGISTERED ✅</strong> badge on the results.
+        </div>
+      </div>
+
       <!-- URL normalisation preview (ISSUE 4) -->
       <div id="urlNormBanner" class="notice info" style="display:none;flex-direction:column;align-items:stretch;gap:0.5rem">
         <div style="display:flex;gap:0.5rem;align-items:flex-start">
@@ -1013,6 +1029,13 @@
                title="No dedicated agent website was provided. Most dimensions are unscored — provide a website URL for the full analysis.">
             <span aria-hidden="true">⚠️</span>
             <span>Limited Scan</span>
+          </div>
+          <!-- v0.4.0 — ACP Registered badge (on-chain verified) -->
+          <div class="base-mcp-badge" id="acpRegisteredBadge" hidden
+               style="background:rgba(0,192,135,.12);color:#00C087;border-color:rgba(0,192,135,.35)"
+               title="On-chain ACP registration verified at 0x238E…32E0">
+            <span aria-hidden="true">✅</span>
+            <span>ACP Registered</span>
           </div>
           <div class="score-verdict" id="resVerdict"></div>
           <div class="score-url" id="resScanUrl"></div>
@@ -1390,6 +1413,29 @@ async function startScan() {
     }
 
     _scanResult = json.data;
+
+    // v0.4.0 — optional on-chain ACP registration check.  When the user
+    // supplied a wallet address, run the check in the background and
+    // attach the result to _scanResult before rendering.  Best-effort:
+    // RPC failures don't block the scan render.
+    const walletAddr = (document.getElementById('walletInput')?.value || '').trim();
+    if (walletAddr && /^0x[0-9a-fA-F]{40}$/.test(walletAddr)) {
+      try {
+        const onchainRes = await fetch('/api/onchain/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet: walletAddr }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        const onchainJson = await onchainRes.json();
+        if (onchainJson.ok && onchainJson.data) {
+          _scanResult.wallet_address = walletAddr;
+          _scanResult.acp_registered = onchainJson.data.registered === true;
+          _scanResult.acp_check      = onchainJson.data;
+        }
+      } catch (_) { /* on-chain is best-effort; never block render */ }
+    }
+
     _renderResults(_scanResult);
     setStep(3);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1530,6 +1576,10 @@ function _renderResults(d) {
 
   // v0.3.1 — reveal the ⚡ Base MCP Partner pill if @handle / display name
   // matches the curated partner list.  Hidden otherwise.
+  // v0.4.0 — ACP Registered pill (only when on-chain check returned true)
+  const acpBadge = document.getElementById('acpRegisteredBadge');
+  if (acpBadge) acpBadge.hidden = d.acp_registered !== true;
+
   const partnerBadge = document.getElementById('baseMcpBadge');
   if (partnerBadge) partnerBadge.hidden = !_isBaseMcpPartner(d);
 

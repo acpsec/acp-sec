@@ -11,8 +11,10 @@ from rich.console import Console
 from .agent_client import AgentClient
 from .checks import (
     run_auth_checks,
+    run_commerce_checks,
     run_context_checks,
     run_governance_checks,
+    run_identity_checks,
     run_input_validation_checks,
     run_mcp_checks,
     run_output_safety_checks,
@@ -39,16 +41,18 @@ DIMENSION_RUNNERS = {
 }
 
 OPTIONAL_DIMENSION_RUNNERS = {
-    "x402":   ("X402",   "x402 Protocol Posture",   run_x402_checks),
-    "mcp":    ("MCP",    "MCP Server Security",     run_mcp_checks),
-    "plugin": ("PLUGIN", "Skill-Plugin Security",   run_plugin_checks),
+    "x402":     ("X402",     "x402 Protocol Posture",         run_x402_checks),
+    "mcp":      ("MCP",      "MCP Server Security",           run_mcp_checks),
+    "plugin":   ("PLUGIN",   "Skill-Plugin Security",         run_plugin_checks),
+    "identity": ("IDENTITY", "Agent Identity & Wallet Model", run_identity_checks),
+    "commerce": ("COMMERCE", "Agent Commerce Protocol",       run_commerce_checks),
 }
 
 MAX_SCORES = {"AUTH": 15, "CTX": 20, "INJ": 20, "PRIV": 20, "OUT": 15, "GOV": 10}
 
 
 @click.group()
-@click.version_option("0.3.1", prog_name="acpsec")
+@click.version_option("0.4.0", prog_name="acpsec")
 def main() -> None:
     """ACP-SEC: AI Agent Security Assessment Framework."""
 
@@ -129,6 +133,32 @@ def main() -> None:
     default=False,
     help="Force-skip the PLUGIN dimension even if plugin.enabled is true.",
 )
+@click.option(
+    "--identity",
+    "identity_only",
+    is_flag=True,
+    default=False,
+    help="Run ONLY the IDENTITY dimension (v0.4.0). Requires identity.enabled.",
+)
+@click.option(
+    "--skip-identity",
+    is_flag=True,
+    default=False,
+    help="Force-skip the IDENTITY dimension even if identity.enabled is true.",
+)
+@click.option(
+    "--commerce",
+    "commerce_only",
+    is_flag=True,
+    default=False,
+    help="Run ONLY the COMMERCE dimension (v0.4.0). Requires commerce.enabled.",
+)
+@click.option(
+    "--skip-commerce",
+    is_flag=True,
+    default=False,
+    help="Force-skip the COMMERCE dimension even if commerce.enabled is true.",
+)
 def check(
     config: Path,
     dim: tuple[str, ...],
@@ -141,6 +171,10 @@ def check(
     skip_mcp: bool,
     plugin_only: bool,
     skip_plugin: bool,
+    identity_only: bool,
+    skip_identity: bool,
+    commerce_only: bool,
+    skip_commerce: bool,
 ) -> None:
     """Run security checks against an AI agent."""
     try:
@@ -158,14 +192,20 @@ def check(
         if not client.health_check():
             console.print("[yellow]Warning: Agent health check failed. Proceeding with static checks.[/yellow]")
 
-    # --x402 / --azul / --mcp / --plugin are mutually exclusive shortcuts.
-    if sum([x402_only, azul_only, mcp_only, plugin_only]) > 1:
+    # --x402 / --azul / --mcp / --plugin / --identity / --commerce are
+    # mutually exclusive "run ONLY this" shortcuts.
+    only_flags = [
+        x402_only, azul_only, mcp_only, plugin_only,
+        identity_only, commerce_only,
+    ]
+    if sum(only_flags) > 1:
         console.print(
-            "[red]--x402, --azul, --mcp, and --plugin are mutually exclusive.[/red]"
+            "[red]--x402, --azul, --mcp, --plugin, --identity, --commerce "
+            "are mutually exclusive.[/red]"
         )
         sys.exit(2)
 
-    if x402_only or azul_only or mcp_only or plugin_only:
+    if any(only_flags):
         # Skip the standard 6 dimensions entirely.
         selected_dims: set[str] = set()
     else:
@@ -235,12 +275,44 @@ def check(
             except Exception as e:
                 console.print(f"  [red]Error in PLUGIN: {e}[/red]")
 
+    # IDENTITY dimension (v0.4.0) — opt-in via cfg.identity.enabled.
+    if not skip_identity and (cfg.identity.enabled or identity_only):
+        if not cfg.identity.enabled:
+            console.print(
+                "[yellow]--identity requested but identity.enabled is false "
+                "in the YAML.[/yellow]"
+            )
+        else:
+            console.print(f"  [dim]Checking IDENTITY...[/dim]", end="\r")
+            try:
+                dimension_results.append(run_identity_checks(cfg, client))
+            except Exception as e:
+                console.print(f"  [red]Error in IDENTITY: {e}[/red]")
+
+    # COMMERCE dimension (v0.4.0) — opt-in via cfg.commerce.enabled.
+    if not skip_commerce and (cfg.commerce.enabled or commerce_only):
+        if not cfg.commerce.enabled:
+            console.print(
+                "[yellow]--commerce requested but commerce.enabled is false "
+                "in the YAML.[/yellow]"
+            )
+        else:
+            console.print(f"  [dim]Checking COMMERCE...[/dim]", end="\r")
+            try:
+                dimension_results.append(run_commerce_checks(cfg, client))
+            except Exception as e:
+                console.print(f"  [red]Error in COMMERCE: {e}[/red]")
+
     engine = ScoringEngine()
+    # Pass agent_config so v0.4.0 penalties (custodial -10, fund-transfer
+    # cap @ 30) apply when relevant.  Older callers without agent_config
+    # still get the v0.3.x scoring behaviour.
     assessment = engine.build_assessment(
         agent_name=cfg.name,
         agent_version=cfg.version,
         dimension_results=dimension_results,
         metadata={"config_path": str(config), "environment": cfg.environment},
+        agent_config=cfg,
     )
 
     print_assessment(assessment)

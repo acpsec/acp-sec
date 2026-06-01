@@ -1,8 +1,10 @@
 """ACP-SEC check modules."""
 
 from .auth import run_auth_checks
+from .commerce import run_commerce_checks
 from .context import run_context_checks
 from .governance import run_governance_checks
+from .identity import run_identity_checks
 from .input_validation import run_input_validation_checks
 from .mcp import run_mcp_checks
 from .output_safety import run_output_safety_checks
@@ -12,8 +14,10 @@ from .x402 import run_x402_checks
 
 __all__ = [
     "run_auth_checks",
+    "run_commerce_checks",
     "run_context_checks",
     "run_governance_checks",
+    "run_identity_checks",
     "run_input_validation_checks",
     "run_mcp_checks",
     "run_output_safety_checks",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from .models import (
     AssessmentResult,
@@ -51,12 +52,26 @@ DIMENSION_WEIGHTS: dict[str, int] = {
 # score/100.  The reporter renders `result.max_score` directly so the
 # denominator is always accurate.
 OPTIONAL_DIMENSION_WEIGHTS: dict[str, int] = {
-    "X402":   10,
-    "MCP":    12,   # v0.3.1 — bumped from 10 to add MCP-OAUTH-01 (2 pts)
-    "PLUGIN":  3,   # v0.3.1 — skill-plugin security (Base MCP partner alignment)
+    "X402":     10,
+    "MCP":      12,   # v0.3.1 — bumped from 10 to add MCP-OAUTH-01 (2 pts)
+    "PLUGIN":    3,   # v0.3.1 — skill-plugin security (Base MCP partner alignment)
+    "IDENTITY": 10,   # v0.4.0 — Virtuals/ERC-8183 agent identity & wallet model
+    "COMMERCE": 10,   # v0.4.0 — agent-commerce protocol surface (escrow + lifecycle)
 }
 
 CRITICAL_PENALTY = 5  # deducted per unmitigated CRITICAL failure
+
+# v0.4.0 — Custodial-wallet penalty.  Deducted when the agent's
+# IdentityConfig declares custodial_wallet=true.  Applied IN ADDITION TO
+# the CRITICAL_PENALTY that ID-01 will already trigger by failing.
+CUSTODIAL_WALLET_PENALTY = 10
+
+# v0.4.0 — Fund-transfer cap.  When CommerceConfig.fund_transfer=true AND
+# the assessment has at least one unmitigated CRITICAL failure (in any
+# dimension), the final score is hard-capped at this value as a percentage.
+# Rationale: a fund-moving agent with any CRITICAL gap must never be
+# presented to users as "production-ready".  Default 30/100 = CRITICAL band.
+FUND_TRANSFER_CAP_PCT = 30.0
 
 
 def total_max_score(active_optional: tuple[str, ...] = ()) -> int:
@@ -80,14 +95,57 @@ class ScoringEngine:
         """Sum earned points across all checks in a dimension."""
         return sum(r.score for r in results)
 
-    def apply_penalties(self, score: float, checks: list[CheckResult]) -> float:
-        """Apply score penalties for unmitigated CRITICAL failures."""
+    def apply_penalties(
+        self,
+        score: float,
+        checks: list[CheckResult],
+        agent_config: Any | None = None,
+        max_score: float | None = None,
+    ) -> float:
+        """Apply score penalties.
+
+        Three rules, applied in order:
+
+          1. CRITICAL_PENALTY (-5 per unmitigated CRITICAL failure).
+          2. v0.4.0 CUSTODIAL_WALLET_PENALTY (-10) when
+             agent_config.identity.custodial_wallet=true.
+          3. v0.4.0 FUND_TRANSFER_CAP_PCT — hard cap on the final score
+             when agent_config.commerce.fund_transfer=true AND any
+             CRITICAL check failed.  Cap is expressed as a percentage of
+             ``max_score`` so it works for /100, /110, and /120 budgets
+             alike.  Falls back to interpreting `score` directly as a
+             percentage when max_score is None (legacy callers).
+        """
         critical_failures = [
             c for c in checks
             if c.severity == Severity.CRITICAL and c.status == CheckStatus.FAIL
         ]
         penalty = len(critical_failures) * CRITICAL_PENALTY
-        return max(0.0, score - penalty)
+        result = max(0.0, score - penalty)
+
+        if agent_config is None:
+            return result
+
+        # 2. Custodial-wallet penalty
+        identity = getattr(agent_config, "identity", None)
+        if identity is not None and getattr(identity, "custodial_wallet", False):
+            result = max(0.0, result - CUSTODIAL_WALLET_PENALTY)
+
+        # 3. Fund-transfer cap
+        commerce = getattr(agent_config, "commerce", None)
+        if (
+            commerce is not None
+            and getattr(commerce, "fund_transfer", False)
+            and critical_failures
+        ):
+            cap_pts = (
+                FUND_TRANSFER_CAP_PCT / 100.0 * max_score
+                if max_score and max_score > 0
+                else FUND_TRANSFER_CAP_PCT
+            )
+            result = min(result, cap_pts)
+
+        return result
 
     def band(self, score: float) -> tuple[str, str]:
         """Return (band_name, verdict) for a given score."""
@@ -102,19 +160,55 @@ class ScoringEngine:
         agent_version: str,
         dimension_results: list[DimensionResult],
         metadata: dict | None = None,
+        agent_config: Any | None = None,
     ) -> AssessmentResult:
+        """Build a final assessment.
+
+        When ``agent_config`` is provided, the v0.4.0 penalties (custodial
+        wallet, fund-transfer cap) are applied in addition to the standard
+        CRITICAL_PENALTY.  Legacy callers that don't pass agent_config get
+        the v0.3.x behaviour.
+        """
         all_checks = [c for d in dimension_results for c in d.checks]
         raw_score = sum(d.score for d in dimension_results)
-        final_score = self.apply_penalties(raw_score, all_checks)
         # Total achievable score = sum of every dimension actually run.
         # This naturally captures opt-in optional dimensions (e.g. X402)
         # without needing a separate code path.
         max_score = sum(d.max_score for d in dimension_results)
+        final_score = self.apply_penalties(
+            raw_score, all_checks,
+            agent_config=agent_config, max_score=max_score,
+        )
         # Band thresholds are expressed as PERCENTAGES, so we feed the
         # percentage to band() — keeps SECURE/HARDENED/... stable whether
         # the denominator is 100 or 110.
         score_pct = (final_score / max_score * 100) if max_score else 0.0
         band_name, verdict = self.band(score_pct)
+
+        meta = dict(metadata or {})
+        # Surface penalty annotations into the assessment metadata so the
+        # dashboard / scanner can render warning chips.
+        if agent_config is not None:
+            warnings_: list[str] = []
+            identity = getattr(agent_config, "identity", None)
+            commerce = getattr(agent_config, "commerce", None)
+            if identity is not None and getattr(identity, "custodial_wallet", False):
+                warnings_.append("Custodial wallet detected (-10 pts)")
+            critical_failures = [
+                c for c in all_checks
+                if c.severity == Severity.CRITICAL and c.status == CheckStatus.FAIL
+            ]
+            if (
+                commerce is not None
+                and getattr(commerce, "fund_transfer", False)
+                and critical_failures
+            ):
+                warnings_.append(
+                    "Fund-transfer agent with critical security gaps — "
+                    "elevated risk (score capped)"
+                )
+            if warnings_:
+                meta.setdefault("penalty_warnings", warnings_)
 
         return AssessmentResult(
             agent_name=agent_name,
@@ -125,7 +219,7 @@ class ScoringEngine:
             band=band_name,
             verdict=verdict,
             dimensions=dimension_results,
-            metadata=metadata or {},
+            metadata=meta,
         )
 
 

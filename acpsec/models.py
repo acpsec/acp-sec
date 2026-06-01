@@ -242,6 +242,71 @@ class PluginConfig(BaseModel):
     input_validation: bool = False      # MCP-PLUGIN-03: plugin input validation
 
 
+class IdentityConfig(BaseModel):
+    """
+    IDENTITY dimension posture (v0.4.0) — agent identity & wallet model.
+
+    Aligned with Virtuals ACP overview + ERC-8183 agent-identity spec.
+    Opt-in via ``enabled``.  Penalty rule: when ``custodial_wallet=true``,
+    the framework deducts an additional 10 points from the final score
+    (see ScoringEngine.apply_penalties).
+    """
+    enabled: bool = False
+
+    # ID-01 (3 pts, CRITICAL) — non-custodial wallet documented
+    non_custodial: bool = False          # ACP recommendation: Privy / OS keychain
+    custodial_wallet: bool = False       # explicit opt-in → triggers -10 penalty
+    wallet_provider: str = ""            # "privy" / "os_keychain" / "magic" / ...
+
+    # ID-02 (2 pts, HIGH) — communication identity disclosed
+    communication_email: str = ""        # public contact
+    communication_channels: list[str] = Field(default_factory=list)
+
+    # ID-03 (2 pts, HIGH) — payment identity disclosed
+    payment_wallet_address: str = ""     # public on-chain identity
+    payment_card_x402: bool = False      # x402 cardless flow accepted
+
+    # ID-04 (2 pts, MEDIUM) — ERC-8183 compliance
+    erc_8183: bool = False
+
+    # ID-05 (1 pt, LOW) — multi-chain support documented
+    supported_chains: list[str] = Field(default_factory=list)
+
+
+class CommerceConfig(BaseModel):
+    """
+    COMMERCE dimension posture (v0.4.0) — agent-commerce protocol surface.
+
+    Aligned with Virtuals ACP commerce primitives (escrow, evaluator, job
+    lifecycle).  Opt-in via ``enabled``.  Penalty rule: when
+    ``fund_transfer=true`` AND the assessment has any unmitigated CRITICAL
+    failure, the final score is hard-capped at 30/100 — fund-moving agents
+    with critical gaps must not be presented as safe to deploy.
+    """
+    enabled: bool = False
+
+    # CMR-01 (3 pts, CRITICAL) — escrow mechanism documented
+    escrow: bool = False
+    escrow_provider: str = ""            # "acp-core" / "moonpay" / ...
+
+    # CMR-02 (2 pts, HIGH) — evaluator / third-party verification
+    evaluator: bool = False
+    evaluator_url: str = ""
+
+    # CMR-03 (2 pts, HIGH) — job types disclosed
+    # Each value should be one of: "service" | "fund-transfer" | "subscription"
+    job_types: list[str] = Field(default_factory=list)
+
+    # CMR-04 (2 pts, HIGH) — fund-transfer protection
+    # When True, the agent takes custody of user funds at some point in the job.
+    # Triggers the fund-transfer cap penalty (see above).
+    fund_transfer: bool = False
+    fund_transfer_protections: list[str] = Field(default_factory=list)
+
+    # CMR-05 (1 pt, LOW) — lifecycle docs
+    lifecycle_documented: bool = False
+
+
 class AgentConfig(BaseModel):
     """Configuration for an AI agent under assessment."""
     name: str
@@ -261,5 +326,7 @@ class AgentConfig(BaseModel):
     x402: X402Config = Field(default_factory=X402Config)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     plugin: PluginConfig = Field(default_factory=PluginConfig)
+    identity: IdentityConfig = Field(default_factory=IdentityConfig)
+    commerce: CommerceConfig = Field(default_factory=CommerceConfig)
 
     model_config = {"populate_by_name": True}

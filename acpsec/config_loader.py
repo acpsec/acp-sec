@@ -10,6 +10,8 @@ import yaml
 
 from .models import (
     AgentConfig,
+    CommerceConfig,
+    IdentityConfig,
     MCPAccessConfig,
     MCPAuditConfig,
     MCPAuthConfig,
@@ -56,9 +58,11 @@ def load_config(path: str | Path) -> AgentConfig:
     provider = data.pop("provider", {})
     security = data.pop("security", {})
     metadata = data.pop("metadata", {})
-    x402_raw   = data.pop("x402",   {}) or {}
-    mcp_raw    = data.pop("mcp",    {}) or {}
-    plugin_raw = data.pop("plugin", {}) or {}
+    x402_raw     = data.pop("x402",     {}) or {}
+    mcp_raw      = data.pop("mcp",      {}) or {}
+    plugin_raw   = data.pop("plugin",   {}) or {}
+    identity_raw = data.pop("identity", {}) or {}
+    commerce_raw = data.pop("commerce", {}) or {}
 
     flat = {
         "name": data.get("name", "unknown"),
@@ -75,9 +79,11 @@ def load_config(path: str | Path) -> AgentConfig:
         "hitl_tiers": security.get("hitl_tiers", data.get("hitl_tiers", [])),
         "environment": metadata.get("environment", data.get("environment", "staging")),
         "owner": metadata.get("owner", data.get("owner", "")),
-        "x402":   _build_x402_config(x402_raw),
-        "mcp":    _build_mcp_config(mcp_raw),
-        "plugin": _build_plugin_config(plugin_raw),
+        "x402":     _build_x402_config(x402_raw),
+        "mcp":      _build_mcp_config(mcp_raw),
+        "plugin":   _build_plugin_config(plugin_raw),
+        "identity": _build_identity_config(identity_raw),
+        "commerce": _build_commerce_config(commerce_raw),
     }
 
     return AgentConfig(**flat)
@@ -144,4 +150,42 @@ def _build_plugin_config(raw: dict) -> PluginConfig:
         sandboxed=bool(raw.get("sandboxed", False)),
         permission_scoping=bool(raw.get("permission_scoping", False)),
         input_validation=bool(raw.get("input_validation", False)),
+    )
+
+
+def _build_identity_config(raw: dict) -> IdentityConfig:
+    """Build an IdentityConfig from the YAML `identity:` block (or defaults).
+
+    Recognises the v0.4.0 Virtuals-ACP / ERC-8183 identity surface.
+    """
+    return IdentityConfig(
+        enabled=bool(raw.get("enabled", False)),
+        non_custodial=bool(raw.get("non_custodial", False)),
+        custodial_wallet=bool(raw.get("custodial_wallet", False)),
+        wallet_provider=str(raw.get("wallet_provider", "")),
+        communication_email=str(raw.get("communication_email", "")),
+        communication_channels=list(raw.get("communication_channels", []) or []),
+        payment_wallet_address=str(raw.get("payment_wallet_address", "")),
+        payment_card_x402=bool(raw.get("payment_card_x402", False)),
+        erc_8183=bool(raw.get("erc_8183", False)),
+        supported_chains=list(raw.get("supported_chains", []) or []),
+    )
+
+
+def _build_commerce_config(raw: dict) -> CommerceConfig:
+    """Build a CommerceConfig from the YAML `commerce:` block (or defaults).
+
+    Recognises the v0.4.0 Virtuals-ACP commerce surface (escrow, evaluator,
+    job types, fund-transfer protections, lifecycle docs).
+    """
+    return CommerceConfig(
+        enabled=bool(raw.get("enabled", False)),
+        escrow=bool(raw.get("escrow", False)),
+        escrow_provider=str(raw.get("escrow_provider", "")),
+        evaluator=bool(raw.get("evaluator", False)),
+        evaluator_url=str(raw.get("evaluator_url", "")),
+        job_types=list(raw.get("job_types", []) or []),
+        fund_transfer=bool(raw.get("fund_transfer", False)),
+        fund_transfer_protections=list(raw.get("fund_transfer_protections", []) or []),
+        lifecycle_documented=bool(raw.get("lifecycle_documented", False)),
     )

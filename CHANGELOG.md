@@ -82,6 +82,118 @@ Partner" badge that surfaces curated partners at glance.
 
 ---
 
+## [0.4.0] — 2026-05-30
+
+### Added — Virtuals / ERC-8183 ACP integration
+
+Aligns the framework with the Virtuals Agent Commerce Protocol
+([os.virtuals.io/acp/overview](https://os.virtuals.io/acp/overview)) and
+the ERC-8183 agent-identity standard.  Two brand-new opt-in dimensions,
+two new scoring penalties, and a best-effort on-chain registration
+check via Base mainnet RPC.
+
+#### IDENTITY dimension (10 pts, OPT-IN)
+- `acpsec/checks/identity.py` — five static checks aligned with the
+  Virtuals identity primitives:
+    - **ID-01** (3, CRITICAL) — non-custodial wallet documented (Privy /
+      OS keychain / passkey).  Hard fail when `custodial_wallet=true`.
+    - **ID-02** (2, HIGH)     — communication identity disclosed
+    - **ID-03** (2, HIGH)     — payment identity (0x address or x402 card)
+    - **ID-04** (2, MEDIUM)   — ERC-8183 compliance
+    - **ID-05** (1, LOW)      — multi-chain support documented
+- `acpsec/models.py` — `IdentityConfig` pydantic block with 9 fields.
+- `acpsec/config_loader.py` — parses the top-level `identity:` YAML block.
+
+#### COMMERCE dimension (10 pts, OPT-IN)
+- `acpsec/checks/commerce.py` — five static checks aligned with the
+  Virtuals commerce primitives:
+    - **CMR-01** (3, CRITICAL) — escrow mechanism documented
+    - **CMR-02** (2, HIGH)     — evaluator / third-party verification
+    - **CMR-03** (2, HIGH)     — job types disclosed (service / fund-transfer / subscription)
+    - **CMR-04** (2, HIGH)     — fund-transfer protections (vacuous pass when not moving funds)
+    - **CMR-05** (1, LOW)      — job lifecycle documented
+- `acpsec/models.py` — `CommerceConfig` pydantic block with 9 fields.
+- `acpsec/config_loader.py` — parses the top-level `commerce:` YAML block.
+
+#### Two new scoring penalties
+- `CUSTODIAL_WALLET_PENALTY = 10` — when `identity.custodial_wallet=true`,
+  the engine deducts a flat 10 pts from the final score (in addition to
+  the CRITICAL_PENALTY that ID-01 will already trigger).
+- `FUND_TRANSFER_CAP_PCT = 30.0` — when `commerce.fund_transfer=true` AND
+  any CRITICAL check fails in any dimension, the final score is hard-capped
+  at 30% of the max (e.g. 30/100, 33/110).  Surfaces
+  `penalty_warnings: ["Fund-transfer agent with critical security gaps — elevated risk (score capped)"]`
+  in `assessment.metadata`.
+- `ScoringEngine.apply_penalties()` and `build_assessment()` now accept an
+  optional `agent_config` parameter so the penalties can read
+  identity/commerce flags.  Legacy callers without `agent_config` get the
+  v0.3.x behaviour.
+
+#### On-chain ACP registration check
+- `acpsec/onchain.py` — `check_acp_registration(wallet_address, rpc_url?)`
+  queries Base mainnet via JSON-RPC (`eth_getLogs`) for any log emitted by
+  the ACP Core contract (`0x238E541BfefD82238730D00a2208E5497F1832E0`)
+  that mentions the wallet as an indexed topic.  Returns
+  `{registered: True | False | None, log_count, block_from, block_to, error}`.
+  Best-effort: returns `registered=None` on RPC failure, never raises.
+  Configurable via `BASE_RPC_URL` env var.
+- `POST /api/onchain/check` route in `dashboard/serve.py` — body
+  `{wallet: "0x…"}`, returns the helper output.  Gated by the same
+  same-origin / `X-Scanner-Token` policy as the public scanner.
+
+#### Scanner UI — optional wallet field
+- `dashboard/scanner.html` Step 2 gains an optional **"Agent Wallet
+  Address (Base/EVM)"** input.  When provided, the scanner POSTs the
+  wallet to `/api/onchain/check` after the website scan completes, sets
+  `scan_result.acp_registered`, and renders an **✅ ACP Registered** pill
+  in the results hero next to the band chip + Base MCP pill.
+
+#### Leaderboard — v0.4.0 schema + 4 new badges
+- `leaderboard.json` gains six fields per agent:
+  `wallet_address`, `acp_registered`, `custodial`, `fund_transfer`,
+  `evaluator`, `job_types`.
+- `leaderboard.html` renders four new pills next to the existing
+  ⚡ Base MCP / ⚠️ Limited pills:
+    - ✅ **ACP Registered** — `acp_registered: true`
+    - 🔐 **Non-Custodial** — `custodial: false`
+    - 💸 **Fund Transfer** — `fund_transfer: true` (red — elevated risk)
+    - ⚖️ **Has Evaluator** — `evaluator: true`
+- Seed pre-populated per spec:
+    - `virtuals_io` → `acp_registered: true`, `evaluator: true`
+    - `bankrbot` → `fund_transfer: true`, `job_types: ["fund-transfer"]`
+    - `aixbt` → `fund_transfer: true`, `job_types: ["fund-transfer"]`
+    - `ethy_agent` → `job_types: ["service"]`
+
+### CLI
+- `acpsec check --identity` runs only the IDENTITY dimension.
+- `acpsec check --commerce` runs only the COMMERCE dimension.
+- `acpsec check --skip-identity` / `--skip-commerce` force-skip variants.
+- `--x402` / `--azul` / `--mcp` / `--plugin` / `--identity` / `--commerce`
+  are now mutually exclusive.
+- `acpsec --version` now reports `0.4.0`.
+
+### Scoring model
+- `OPTIONAL_DIMENSION_WEIGHTS` grows to:
+  `{X402: 10, MCP: 12, PLUGIN: 3, IDENTITY: 10, COMMERCE: 10}`.
+- Maximum budget with all five opt-ins enabled: **145 / 100 + 45**.
+
+### Tests
+- `tests/test_identity.py` — 18 tests: per-check positive/negative paths,
+  opt-in gate, custodial penalty composition, `total_max_score` arithmetic.
+- `tests/test_commerce.py` — 20 tests: per-check paths, fund-transfer cap
+  engagement (with and without max_score scaling), warning surfaced in
+  assessment metadata.
+- `tests/test_x402.py` — `OPTIONAL_DIMENSION_WEIGHTS` table assertion
+  updated for the new shape.
+- Suite total: **172 / 172 pass** (134 baseline + 38 new).
+
+### Sources
+- [Virtuals ACP Overview](https://os.virtuals.io/acp/overview)
+- ERC-8183 (Agent Identity Standard)
+- ACP Core contract on Base mainnet: `0x238E541BfefD82238730D00a2208E5497F1832E0`
+
+---
+
 ## [0.3.0] — 2026-05-17
 
 ### Added — MCP Server Security Module

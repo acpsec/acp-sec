@@ -343,6 +343,13 @@ def _upsert_leaderboard_entry(scan: dict) -> None:
             "token":          None,
             "base_mcp":       False,
             "limited_scan":   bool(scan.get("limited_scan", False)),
+            # v0.4.0 fields
+            "wallet_address": scan.get("wallet_address"),
+            "acp_registered": bool(scan.get("acp_registered", False)),
+            "custodial":      scan.get("custodial", "unknown"),
+            "fund_transfer":  bool(scan.get("fund_transfer", False)),
+            "evaluator":      bool(scan.get("evaluator", False)),
+            "job_types":      list(scan.get("job_types", []) or []),
             "last_scan_date": today,
             "previous_score": score,   # first sighting → no movement
         })
@@ -375,6 +382,37 @@ def monitor_page():
 def leaderboard_page():
     """Serve the public agent-security leaderboard."""
     return send_file(LEADERBOARD_HTML)
+
+
+@app.post("/api/onchain/check")
+def onchain_check():
+    """v0.4.0 — best-effort on-chain ACP registration check.
+
+    Request body: { "wallet": "0x…" }
+    Returns: { ok, data: { contract, wallet, registered, log_count, ... } }
+
+    Same gating as /api/scanner/* — needs the same-origin browser flow
+    or a valid X-Scanner-Token header, since this hits public RPC and
+    could be abused.
+    """
+    gate = _require_scanner_token()
+    if gate is not None:
+        return jsonify(gate[0]), gate[1]
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415
+    payload = request.get_json(force=True)
+    wallet  = (payload.get("wallet") or "").strip()
+    if not wallet:
+        return jsonify({"ok": False, "error": "'wallet' is required"}), 422
+
+    try:
+        from acpsec.onchain import check_acp_registration  # noqa: PLC0415
+    except ImportError:
+        return jsonify({"ok": False, "error": "acpsec.onchain not available"}), 503
+
+    rpc_url = os.environ.get("BASE_RPC_URL", "").strip() or None
+    result = check_acp_registration(wallet, rpc_url=rpc_url)
+    return jsonify({"ok": True, "data": result}), 200
 
 
 @app.get("/api/leaderboard")
