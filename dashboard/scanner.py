@@ -2260,6 +2260,14 @@ def analyze_agent(url: str, agent_name: str = "", scan_mode: str = "root") -> di
             "parent_domain":             parent_domain,
             "parent_signals":            parent_data,
             "parent_score_contribution": parent_contribution,
+            # v0.4.1 — token / contract-address extraction from the scanned
+            # page body.  X bio is not available here (it comes from the
+            # Nitter scrape that happens before analyze_agent is called);
+            # serve.py may merge it in after the fact if it has the bio.
+            "token": extract_token_info(
+                html=body_text,
+                x_bio="",
+            ),
             # Target-level corpus findings (scanner v2)
             "corpus": {
                 "extra_pages_found": corpus["extra_pages_count"],
@@ -2283,3 +2291,90 @@ def urlparse_name(url: str) -> str:
         return h.removeprefix("www.")
     except Exception:
         return url
+
+
+# ---------------------------------------------------------------------------
+# Token / contract-address extraction (v0.4.1)
+# ---------------------------------------------------------------------------
+
+# Stablecoin / gas tickers that appear in almost every DeFi page and are
+# overwhelmingly false positives for "this agent has an official token".
+_TOKEN_EXCLUDED: frozenset[str] = frozenset({
+    "USD", "USDC", "USDT", "ETH", "BTC", "SOL", "DAI", "BNB",
+    "MATIC", "AVAX", "WETH", "WBTC", "LINK", "UNI", "APE", "ARB",
+    "OP", "BASE", "GAS", "NFT", "API", "SDK", "APP", "URL",
+})
+
+# Pattern for EVM (Base/Ethereum) contract addresses.
+_CA_PATTERN = re.compile(r'\b0x[a-fA-F0-9]{40}\b')
+
+# Pattern for ticker symbols. Lower bound: 2 chars (e.g. $AI); upper: 10.
+_TICKER_PATTERN = re.compile(r'\$([A-Z][A-Z0-9]{1,9})\b')
+
+
+def extract_token_info(
+    html: str = "",
+    x_bio: str = "",
+    x_pinned_tweet: str = "",
+) -> dict:
+    """Extract token ticker and contract address from agent's public content.
+
+    Searches ``html`` (scraped website body), ``x_bio`` (X/Twitter bio
+    from Nitter scrape), and ``x_pinned_tweet`` (optional — not yet wired
+    to the Nitter scraper but reserved for future use).
+
+    Returns a dict consumed by the scanner result and the leaderboard
+    upsert:
+
+        {
+          'has_token':           bool,
+          'ticker':              str | None,   # first non-excluded ticker
+          'contract_address':    str | None,   # first 0x… address found
+          'all_tickers_found':   list[str],
+          'all_contracts_found': list[str],
+          'signals':             bool,         # strong CA/token keyword near address
+          'detected_from':       str | None,   # 'website'|'x_bio'|'mixed'
+        }
+    """
+    # Combine all text sources for full-text search.
+    combined = " ".join([html or "", x_bio or "", x_pinned_tweet or ""])
+    combined_upper = combined  # tickers are case-sensitive ($UPPER format)
+
+    # Contract addresses — case-insensitive in hex chars.
+    all_cas = list(dict.fromkeys(_CA_PATTERN.findall(combined)))
+
+    # Tickers — $UPPER only (proper token tickers are capitalised).
+    raw_tickers = list(dict.fromkeys(_TICKER_PATTERN.findall(combined_upper)))
+    tickers = [t for t in raw_tickers if t not in _TOKEN_EXCLUDED]
+
+    # "Strong signal" keywords that indicate deliberate token promotion.
+    signal_keywords = (
+        "tokenize", "token address", "contract address", "official token",
+        "ca:", "contract:", "ticker:", "deployed at", "mint address",
+    )
+    has_signals = any(k in combined.lower() for k in signal_keywords)
+
+    # Derive 'detected_from' only when something was actually found.
+    detected_from: str | None = None
+    if tickers or all_cas:
+        sources: list[str] = []
+        if html and (_CA_PATTERN.search(html) or _TICKER_PATTERN.search(html)):
+            sources.append("website")
+        if x_bio and (_CA_PATTERN.search(x_bio) or _TICKER_PATTERN.search(x_bio)):
+            sources.append("x_bio")
+        if x_pinned_tweet and (
+            _CA_PATTERN.search(x_pinned_tweet)
+            or _TICKER_PATTERN.search(x_pinned_tweet)
+        ):
+            sources.append("pinned_tweet")
+        detected_from = "mixed" if len(sources) > 1 else (sources[0] if sources else "unknown")
+
+    return {
+        "has_token":           bool(tickers or all_cas),
+        "ticker":              f"${tickers[0]}" if tickers else None,
+        "contract_address":    all_cas[0] if all_cas else None,
+        "all_tickers_found":   [f"${t}" for t in tickers],
+        "all_contracts_found": all_cas,
+        "signals":             has_signals,
+        "detected_from":       detected_from,
+    }

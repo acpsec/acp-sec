@@ -348,6 +348,10 @@ def _upsert_leaderboard_entry(scan: dict) -> None:
     existing = next((a for a in agents if a.get("id") == key), None)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    # v0.4.1 — extract ticker from scan token block, if present
+    token_block = scan.get("token") or {}
+    detected_ticker = token_block.get("ticker") if token_block.get("has_token") else None
+
     if existing:
         existing["previous_score"] = existing.get("score", score)
         existing["score"]          = score
@@ -357,6 +361,9 @@ def _upsert_leaderboard_entry(scan: dict) -> None:
         existing["last_scan_date"] = today
         if scan.get("x_username"):
             existing["x_handle"] = scan["x_username"]
+        # Overwrite token only when scan found one and existing is blank.
+        if detected_ticker and not existing.get("token"):
+            existing["token"] = detected_ticker
     else:
         agents.append({
             "id":             key,
@@ -366,7 +373,7 @@ def _upsert_leaderboard_entry(scan: dict) -> None:
             "tier":           _tier_for_score(score),
             "critical_fails": int(critical_fails),
             "category":       "general",
-            "token":          None,
+            "token":          detected_ticker,   # v0.4.1 — from scan token block
             "base_mcp":       False,
             "limited_scan":   bool(scan.get("limited_scan", False)),
             # v0.4.0 fields
@@ -654,6 +661,32 @@ def scanner_scan():
     result["data"]["x_handle_verified"] = scraped
     result["data"]["agent_name"]      = agent_name or result["data"]["agent_name"]
 
+    # v0.4.1 — re-run token extraction with the X bio when we have it from
+    # a successful Nitter scrape.  The scanner only has the website body;
+    # the bio often carries the ticker / CA that the site omits.
+    x_bio = (payload.get("x_bio") or "").strip()
+    if scraped and x_bio:
+        try:
+            token_merged = sc.extract_token_info(
+                html=result["data"].get("_body_text_for_token", ""),
+                x_bio=x_bio,
+            )
+            existing = result["data"].get("token") or {}
+            # Bio signal wins for ticker/CA if website didn't find any.
+            if not existing.get("has_token") and token_merged.get("has_token"):
+                result["data"]["token"] = token_merged
+            elif token_merged.get("has_token"):
+                # Merge: prefer website CA but take bio ticker if we don't have one.
+                if not existing.get("ticker") and token_merged.get("ticker"):
+                    existing["ticker"] = token_merged["ticker"]
+                if not existing.get("contract_address") and token_merged.get("contract_address"):
+                    existing["contract_address"] = token_merged["contract_address"]
+                existing["has_token"] = True
+                existing.setdefault("detected_from", "x_bio")
+                result["data"]["token"] = existing
+        except Exception:  # noqa: BLE001
+            pass
+
     # Persist last scan (best-effort)
     try:
         SCAN_STORE.write_text(json.dumps(result["data"], indent=2, default=str))
@@ -674,6 +707,87 @@ def scanner_scan():
         pass
 
     return jsonify(result), 200
+
+
+@app.post("/api/scanner/bulk")
+def scanner_bulk():
+    """Scan multiple agents by X username, sequentially with rate limiting.
+
+    Request body:
+        { "usernames": ["aerodromefi", "morpho", ...], "scan_mode": "root" }
+
+    Rate limits:
+        - Maximum 10 agents per request (hard cap).
+        - 5-second pause between scans to respect downstream services.
+
+    Returns an array of per-agent results in the same format as
+    /api/scanner/scan.  Each entry is { username, ok, data?, error? }.
+
+    Gating: same same-origin / X-Scanner-Token policy as the individual
+    scan endpoint.
+    """
+    import time as _time  # noqa: PLC0415
+
+    gate = _require_scanner_token()
+    if gate is not None:
+        return jsonify(gate[0]), gate[1]
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415
+
+    payload   = request.get_json(force=True) or {}
+    usernames = [str(u).strip().lstrip("@") for u in (payload.get("usernames") or []) if u]
+    scan_mode = (payload.get("scan_mode") or "root").strip().lower()
+    if scan_mode not in ("root", "exact"):
+        scan_mode = "root"
+
+    if not usernames:
+        return jsonify({"error": "'usernames' must be a non-empty list"}), 422
+
+    MAX_BULK = 10
+    if len(usernames) > MAX_BULK:
+        return jsonify({
+            "error": f"Too many agents — maximum {MAX_BULK} per request, got {len(usernames)}",
+        }), 422
+
+    sc = _get_scanner()
+    if sc is None:
+        return jsonify({"error": "scanner module not available"}), 503
+
+    results = []
+    for i, username in enumerate(usernames):
+        if i > 0:
+            _time.sleep(5)  # rate-limiting pause between scans
+
+        # Derive a plausible website URL from the username.  For purely
+        # social-only agents this will hit the social-media guard in
+        # analyze_agent and trigger a limited scan — which is correct.
+        url = f"https://twitter.com/{username}"
+
+        try:
+            scan = sc.analyze_agent(url, username, scan_mode=scan_mode)
+        except Exception as exc:  # noqa: BLE001
+            results.append({"username": username, "ok": False, "error": str(exc)})
+            continue
+
+        if scan.get("ok") and scan.get("data"):
+            scan["data"]["x_username"] = username
+            # Auto-update leaderboard + report store (best-effort).
+            try:
+                _upsert_leaderboard_entry(scan["data"])
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _save_report(scan["data"])
+            except Exception:  # noqa: BLE001
+                pass
+            results.append({"username": username, "ok": True, "data": scan["data"]})
+        else:
+            results.append({
+                "username": username, "ok": False,
+                "error": scan.get("error") or "scan failed",
+            })
+
+    return jsonify({"ok": True, "count": len(results), "results": results}), 200
 
 
 @app.get("/api/score")

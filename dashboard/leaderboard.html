@@ -220,6 +220,13 @@
       background: var(--bg-tertiary);
       border: 1px solid var(--border);
     }
+    /* v0.4.1 — robot-emoji fallback when unavatar returns 404 */
+    .avatar-fallback {
+      width: 34px; height: 34px; border-radius: 8px;
+      background: var(--bg-tertiary); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; flex-shrink: 0; line-height: 1;
+    }
     .agent-name { font-weight: 600; color: var(--text-primary); }
     .agent-handle { font-size: 0.72rem; color: var(--text-tertiary); }
     .agent-token {
@@ -389,8 +396,16 @@ const LAST_SCAN_TIME_KEY = 'acpsec_last_scan_time';
 // ── Helpers ───────────────────────────────────────────────────────────────
 function _avatarUrl(handle) {
   const h = (handle || '').replace(/^@/, '').trim();
-  if (!h) return '/static/logo.jpg?v=3';
+  // Return null → caller renders .avatar-fallback directly (no broken img).
+  if (!h) return null;
   return `https://unavatar.io/twitter/${encodeURIComponent(h)}?fallback=false`;
+}
+
+function _avatarHtml(handle) {
+  const url = _avatarUrl(handle);
+  if (!url) return '<div class="avatar-fallback">🤖</div>';
+  return `<img class="agent-avatar" src="${url}" alt=""
+               onerror="this.outerHTML='<div class=\\'avatar-fallback\\'>🤖</div>'">`;
 }
 
 function _rankCell(rank) {
@@ -443,8 +458,7 @@ function _render() {
         <td class="col-move">${_moveCell(a)}</td>
         <td>
           <div class="agent-cell">
-            <img class="agent-avatar" src="${_avatarUrl(a.x_handle)}"
-                 onerror="this.src='/static/logo.jpg?v=3'" alt="">
+            ${_avatarHtml(a.x_handle)}
             <div>
               <div><span class="agent-name">${a.name}</span>${tokenTag}</div>
               <div class="agent-handle">@${(a.x_handle || a.id)}</div>
