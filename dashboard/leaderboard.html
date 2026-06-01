@@ -462,31 +462,88 @@ function _render() {
   }).join('');
 }
 
-// Clicking a row hands a minimal report to the dashboard via localStorage,
-// then navigates to /.  The dashboard's tryAutoLoad() reads these keys and
-// renders the hero (score + band + agent name).  Full control-by-control
-// detail is only available for live scans run from the Scanner page.
-function loadAgent(a) {
-  const report = {
-    agent_name:        a.name,
-    agent_version:     '',
-    band:              a.tier,
-    verdict:           `Leaderboard snapshot — last scanned ${a.last_scan_date}.`,
-    final_score:       a.score,
-    score_pct:         a.score,
-    critical_fails:    a.critical_fails,
-    controls:          [],
-    source:            'leaderboard',
-    scan_url:          '',
-    x_username:        a.x_handle || '',
-    x_handle_verified: false,
-    limited_scan:      !!a.limited_scan,
-  };
+// ── Row click handler ──────────────────────────────────────────────────────
+// Try to fetch the full 38-control report from the server first.
+// If the report exists  → save to localStorage → navigate to /.
+// If the report is missing → show a "Scan now" toast with a direct link.
+async function loadAgent(a) {
+  // Show a brief loading indicator on the clicked row.
+  const allRows = document.querySelectorAll('#boardBody tr');
+  allRows.forEach(r => r.style.opacity = '0.5');
+
+  let fullReport = null;
   try {
-    localStorage.setItem(LAST_SCAN_KEY, JSON.stringify(report));
-    localStorage.setItem(LAST_SCAN_TIME_KEY, String(Date.now()));
-  } catch (_) { /* ignore quota / private mode */ }
-  window.location.href = '/';
+    const res  = await fetch(`/api/report/${encodeURIComponent(a.id)}`,
+                             { signal: AbortSignal.timeout(5000) });
+    const json = await res.json();
+    if (json.ok && json.data) fullReport = json.data;
+  } catch (_) { /* network error — fall through to stub */ }
+
+  allRows.forEach(r => r.style.opacity = '');
+
+  if (fullReport) {
+    // Full report available — let the dashboard render the complete breakdown.
+    try {
+      localStorage.setItem(LAST_SCAN_KEY,      JSON.stringify(fullReport));
+      localStorage.setItem(LAST_SCAN_TIME_KEY, String(Date.now()));
+    } catch (_) { /* quota / private mode */ }
+    window.location.href = '/';
+    return;
+  }
+
+  // ── Fallback: show toast with "Scan now" button ─────────────────────────
+  _showNoReportToast(a);
+}
+
+function _showNoReportToast(a) {
+  // Remove any existing toast
+  document.getElementById('noReportToast')?.remove();
+
+  const handle = (a.x_handle || a.id || '').replace(/^@/, '');
+  const scanUrl = `/scanner`;
+
+  const toast = document.createElement('div');
+  toast.id = 'noReportToast';
+  toast.style.cssText = [
+    'position:fixed','bottom:1.5rem','left:50%','transform:translateX(-50%)',
+    'background:var(--bg-secondary)','border:1px solid var(--border)',
+    'border-radius:10px','padding:1rem 1.25rem','max-width:420px','width:90%',
+    'display:flex','flex-direction:column','gap:0.6rem',
+    'box-shadow:0 4px 24px rgba(0,0,0,.25)',
+    'z-index:9999','font-size:0.875rem','color:var(--text-primary)',
+  ].join(';');
+
+  toast.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:0.6rem">
+      <span style="font-size:1.2rem;flex-shrink:0">📊</span>
+      <div style="flex:1">
+        <strong>Full report not available</strong>
+        <div style="color:var(--text-secondary);margin-top:0.2rem">
+          Re-scan <strong>${a.name}</strong> for the detailed 38-check breakdown.
+        </div>
+      </div>
+      <button onclick="document.getElementById('noReportToast').remove()"
+              style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);
+                     font-size:1.1rem;line-height:1;flex-shrink:0">✕</button>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+      <a href="${scanUrl}"
+         style="display:inline-block;padding:0.45rem 1.1rem;border-radius:9999px;
+                background:var(--accent-base);color:#fff;text-decoration:none;
+                font-size:0.78rem;font-weight:600;letter-spacing:.03em">
+        🔍 Scan now
+      </a>
+      <button onclick="document.getElementById('noReportToast').remove()"
+              style="padding:0.45rem 1.1rem;border-radius:9999px;border:1px solid var(--border);
+                     background:transparent;color:var(--text-secondary);cursor:pointer;
+                     font-size:0.78rem;font-weight:600">
+        Dismiss
+      </button>
+    </div>`;
+
+  document.body.appendChild(toast);
+  // Auto-dismiss after 12 s
+  setTimeout(() => toast.remove(), 12000);
 }
 
 // Filter tab clicks

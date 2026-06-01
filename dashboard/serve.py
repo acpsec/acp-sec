@@ -45,6 +45,7 @@ LEADERBOARD_HTML = Path(__file__).parent / "leaderboard.html"
 STORE_FILE       = Path(__file__).parent / "score_store.json"
 SCAN_STORE       = Path(__file__).parent / "scan_store.json"
 LEADERBOARD_FILE = Path(__file__).parent / "leaderboard.json"
+REPORTS_DIR      = Path(__file__).parent / "reports"
 
 # In-memory cache; populated from disk on startup
 _current_score: dict[str, Any] | None = None
@@ -291,6 +292,31 @@ def _save_leaderboard(board: dict) -> None:
         pass
 
 
+def _report_path(agent_id: str) -> Path:
+    """Canonical path for a full-scan report file."""
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    return REPORTS_DIR / f"{agent_id}.json"
+
+
+def _save_report(scan: dict) -> None:
+    """Persist the full scan result as dashboard/reports/{agent_id}.json.
+
+    Called automatically after every successful /api/scanner/scan so the
+    leaderboard click handler can load the full 38-control breakdown.
+    Best-effort; never raises.
+    """
+    name = (scan.get("agent_name") or scan.get("x_username") or "").strip()
+    if not name:
+        return
+    key = _leaderboard_key(scan.get("x_username") or name)
+    if not key:
+        return
+    try:
+        _report_path(key).write_text(json.dumps(scan, indent=2, default=str))
+    except OSError:
+        pass
+
+
 def _upsert_leaderboard_entry(scan: dict) -> None:
     """Add or update an agent in the leaderboard from a completed scan.
 
@@ -449,6 +475,41 @@ def get_leaderboard():
     }), 200
 
 
+@app.get("/api/report/<agent_id>")
+def get_report(agent_id: str):
+    """Return the full scan breakdown (38 controls) for a leaderboard agent.
+
+    Reports are stored in dashboard/reports/{agent_id}.json — written on
+    every successful scan via /api/scanner/scan, or seeded at deploy time
+    by running the scanner against each seeded agent.
+
+    Returns 404 with a friendly message when no report exists so the
+    leaderboard UI can offer a "Scan now" fallback.
+    """
+    # Normalise: strip @ and lowercase, same as _leaderboard_key()
+    safe_id = re.sub(r"[^a-z0-9_]", "", (agent_id or "").lower().replace("-", "_"))
+    if not safe_id:
+        return jsonify({"ok": False, "error": "invalid agent id"}), 400
+
+    path = _report_path(safe_id)
+    if not path.exists():
+        return jsonify({
+            "ok": False,
+            "error": "report_not_found",
+            "message": (
+                "Full report not available for this agent. "
+                "Re-scan it from the Scanner page for a detailed breakdown."
+            ),
+            "scan_url": f"/scanner",
+        }), 404
+
+    try:
+        data = json.loads(path.read_text())
+        return jsonify({"ok": True, "data": data}), 200
+    except (OSError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.get("/api/health")
 def health():
     """Lightweight liveness probe — used by Railway healthchecks and uptime monitors."""
@@ -603,6 +664,13 @@ def scanner_scan():
     try:
         _upsert_leaderboard_entry(result["data"])
     except Exception:  # noqa: BLE001 — leaderboard must never break a scan
+        pass
+
+    # Auto-save the full 38-control breakdown so the leaderboard click
+    # handler can load it via GET /api/report/<agent_id> (best-effort).
+    try:
+        _save_report(result["data"])
+    except Exception:  # noqa: BLE001
         pass
 
     return jsonify(result), 200
