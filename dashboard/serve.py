@@ -23,12 +23,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import warnings
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, redirect, request, send_file
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
@@ -46,6 +47,13 @@ STORE_FILE       = Path(__file__).parent / "score_store.json"
 SCAN_STORE       = Path(__file__).parent / "scan_store.json"
 LEADERBOARD_FILE = Path(__file__).parent / "leaderboard.json"
 REPORTS_DIR      = Path(__file__).parent / "reports"
+
+# ---------------------------------------------------------------------------
+# Leaderboard auth session store
+# ---------------------------------------------------------------------------
+_lb_sessions: dict[str, datetime] = {}  # token → expiry
+LB_SESSION_COOKIE = "lb_session"
+LB_SESSION_DAYS = 7
 
 # In-memory cache; populated from disk on startup
 _current_score: dict[str, Any] | None = None
@@ -270,6 +278,13 @@ def _tier_for_score(score: float) -> str:
     return "COMPROMISED"
 
 
+def _lb_session_valid(req) -> bool:
+    """Return True if the request carries a valid leaderboard session cookie."""
+    token = req.cookies.get(LB_SESSION_COOKIE, "")
+    expiry = _lb_sessions.get(token)
+    return bool(expiry and datetime.now(timezone.utc) < expiry)
+
+
 def _limited_tiebreaker_bonus(token, acp_registered: bool, base_mcp: bool) -> float:
     """Extra points for limited-scan agents based on observable public signals."""
     bonus = 0.0
@@ -440,8 +455,36 @@ def monitor_page():
 
 @app.get("/leaderboard")
 def leaderboard_page():
-    """Serve the public agent-security leaderboard."""
+    """Serve the agent-security leaderboard (password-protected when LEADERBOARD_PASSWORD is set)."""
+    password = os.environ.get("LEADERBOARD_PASSWORD", "")
+    if password and not _lb_session_valid(request):
+        return redirect("/leaderboard/login")
     return send_file(LEADERBOARD_HTML)
+
+
+@app.get("/leaderboard/login")
+def leaderboard_login():
+    """Serve the leaderboard login page."""
+    return send_file(Path(__file__).parent / "leaderboard_login.html")
+
+
+@app.post("/api/leaderboard/auth")
+def leaderboard_auth():
+    """Validate the leaderboard password and issue a session cookie."""
+    password = os.environ.get("LEADERBOARD_PASSWORD", "")
+    if not password:
+        # No password set — leaderboard is open
+        return jsonify({"ok": True, "token": "open"}), 200
+    body = request.get_json(silent=True) or {}
+    if body.get("password") != password:
+        return jsonify({"ok": False, "error": "Incorrect password"}), 401
+    token = "lb_" + secrets.token_urlsafe(24)
+    expiry = datetime.now(timezone.utc) + timedelta(days=LB_SESSION_DAYS)
+    _lb_sessions[token] = expiry
+    resp = jsonify({"ok": True})
+    resp.set_cookie(LB_SESSION_COOKIE, token, max_age=LB_SESSION_DAYS * 86400,
+                    httponly=True, samesite="Lax", secure=False)
+    return resp, 200
 
 
 @app.post("/api/onchain/check")

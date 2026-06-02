@@ -1,11 +1,11 @@
 {
-  "agent_name": "vaderresearch",
+  "agent_name": "Sekoia",
   "agent_version": "",
   "band": "COMPROMISED",
-  "verdict": "Scan limited \u2014 no website found. Provide the agent's website URL for a full 38-check scan.",
+  "verdict": "Scan limited — no website found. Provide the agent's website URL for a full 38-check scan.",
   "final_score": 2.0,
   "score_pct": 1.7,
-  "timestamp": "2026-06-01T12:53:39.200211+00:00",
+  "timestamp": "2026-06-02T00:00:00+00:00",
   "controls": [
     {
       "ctrl": "AUTH-01",
@@ -16,9 +16,9 @@
       "score": 2.0,
       "severity": "HIGH",
       "status": "warn",
-      "finding": "Agent identity declared: 'vaderresearch'.",
+      "finding": "Agent identity declared: 'Sekoia'.",
       "evidence": [
-        "agent_name='vaderresearch'",
+        "agent_name='Sekoia'",
         "Only observable signal in limited-scan mode.",
         "Full identity verification requires a public website."
       ],
@@ -37,9 +37,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -56,9 +56,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -75,9 +75,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -94,9 +94,9 @@
       "score": 0.0,
       "severity": "CRITICAL",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -113,9 +113,9 @@
       "score": 0.0,
       "severity": "CRITICAL",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -132,9 +132,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -151,9 +151,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -170,9 +170,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -189,9 +189,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -208,9 +208,9 @@
       "score": 0.0,
       "severity": "CRITICAL",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -227,9 +227,9 @@
       "score": 0.0,
       "severity": "CRITICAL",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -246,9 +246,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -265,9 +265,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -284,9 +284,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -303,9 +303,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -322,9 +322,9 @@
       "score": 0.0,
       "severity": "CRITICAL",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -341,9 +341,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -360,9 +360,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -379,9 +379,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -398,9 +398,9 @@
       "score": 0.0,
       "severity": "CRITICAL",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -417,9 +417,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -436,9 +436,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -455,9 +455,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -474,9 +474,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -493,9 +493,9 @@
       "score": 0.0,
       "severity": "HIGH",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -512,9 +512,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -531,9 +531,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -550,9 +550,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -569,9 +569,9 @@
       "score": 0.0,
       "severity": "LOW",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -588,9 +588,9 @@
       "score": 0.0,
       "severity": "LOW",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -607,9 +607,9 @@
       "score": 0.0,
       "severity": "LOW",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -626,9 +626,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -645,9 +645,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -664,9 +664,9 @@
       "score": 0.0,
       "severity": "LOW",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -683,9 +683,9 @@
       "score": 0.0,
       "severity": "MEDIUM",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -702,9 +702,9 @@
       "score": 0.0,
       "severity": "LOW",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -721,9 +721,9 @@
       "score": 0.0,
       "severity": "LOW",
       "status": "skip",
-      "finding": "Not assessable \u2014 no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
+      "finding": "Not assessable — no dedicated website provided. Scanner was given a social-media profile or no URL at all.",
       "evidence": [
-        "Limited scan mode active \u2014 no public agent site to inspect."
+        "Limited scan mode active — no public agent site to inspect."
       ],
       "recommendations": [
         "Provide the agent's dedicated website URL for a full analysis.",
@@ -733,8 +733,8 @@
     }
   ],
   "source": "scanner",
-  "scan_url": "https://twitter.com/",
-  "original_url": "https://twitter.com/vaderresearch",
+  "scan_url": "https://x.com/",
+  "original_url": "https://x.com/Sekoia_virtuals",
   "security_headers": {},
   "sec_header_count": 0,
   "critical_fails": 0,
@@ -750,11 +750,11 @@
   "root_tried": null,
   "score_cap": 15.0,
   "metadata": {
-    "target_url": "https://twitter.com/",
-    "original_url": "https://twitter.com/vaderresearch",
-    "parent_domain": null,
+    "target_url": "https://x.com/",
+    "original_url": "https://x.com/Sekoia_virtuals",
+    "parent_domain": "x.com",
     "is_self_probe": false,
-    "scan_timestamp": "2026-06-01T12:53:39.200211+00:00",
+    "scan_timestamp": "2026-06-02T00:00:00+00:00",
     "scan_duration_ms": 0,
     "parent_signals": null,
     "pages_probed": [],
@@ -765,6 +765,5 @@
       "Only AUTH-01 receives partial credit (agent identity declared).",
       "Provide the agent's website URL for a full 38-check scan."
     ]
-  },
-  "x_username": "vaderresearch"
+  }
 }
