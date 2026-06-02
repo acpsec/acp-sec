@@ -270,6 +270,18 @@ def _tier_for_score(score: float) -> str:
     return "COMPROMISED"
 
 
+def _limited_tiebreaker_bonus(token, acp_registered: bool, base_mcp: bool) -> float:
+    """Extra points for limited-scan agents based on observable public signals."""
+    bonus = 0.0
+    if token:
+        bonus += 1.0
+    if acp_registered:
+        bonus += 1.0
+    if base_mcp:
+        bonus += 0.5
+    return bonus
+
+
 def _leaderboard_key(name: str) -> str:
     """Stable id for an agent: lowercase, strip @, keep [a-z0-9_]."""
     key = (name or "").strip().lstrip("@").lower()
@@ -352,12 +364,21 @@ def _upsert_leaderboard_entry(scan: dict) -> None:
     token_block = scan.get("token") or {}
     detected_ticker = token_block.get("ticker") if token_block.get("has_token") else None
 
+    is_limited = bool(scan.get("limited_scan", False))
+
     if existing:
+        effective_token = detected_ticker or existing.get("token")
+        if is_limited:
+            score += _limited_tiebreaker_bonus(
+                token=effective_token,
+                acp_registered=bool(scan.get("acp_registered", existing.get("acp_registered", False))),
+                base_mcp=bool(existing.get("base_mcp", False)),
+            )
         existing["previous_score"] = existing.get("score", score)
         existing["score"]          = score
         existing["tier"]           = _tier_for_score(score)
         existing["critical_fails"] = int(critical_fails)
-        existing["limited_scan"]   = bool(scan.get("limited_scan", False))
+        existing["limited_scan"]   = is_limited
         existing["last_scan_date"] = today
         if scan.get("x_username"):
             existing["x_handle"] = scan["x_username"]
@@ -365,6 +386,12 @@ def _upsert_leaderboard_entry(scan: dict) -> None:
         if detected_ticker and not existing.get("token"):
             existing["token"] = detected_ticker
     else:
+        if is_limited:
+            score += _limited_tiebreaker_bonus(
+                token=detected_ticker,
+                acp_registered=bool(scan.get("acp_registered", False)),
+                base_mcp=False,
+            )
         agents.append({
             "id":             key,
             "name":           name,
@@ -375,7 +402,7 @@ def _upsert_leaderboard_entry(scan: dict) -> None:
             "category":       "general",
             "token":          detected_ticker,   # v0.4.1 — from scan token block
             "base_mcp":       False,
-            "limited_scan":   bool(scan.get("limited_scan", False)),
+            "limited_scan":   is_limited,
             # v0.4.0 fields
             "wallet_address": scan.get("wallet_address"),
             "acp_registered": bool(scan.get("acp_registered", False)),

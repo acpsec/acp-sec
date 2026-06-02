@@ -3,8 +3,8 @@
   "agent_version": "",
   "band": "COMPROMISED",
   "verdict": "Scan limited \u2014 no website found. Provide the agent's website URL for a full 38-check scan.",
-  "final_score": 2.0,
-  "score_pct": 1.7,
+  "final_score": 3.0,
+  "score_pct": 2.6,
   "timestamp": "2026-06-01T12:53:44.235183+00:00",
   "controls": [
     {
