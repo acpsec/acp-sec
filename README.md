@@ -132,6 +132,17 @@ See [ACP-SEC-Framework-v0.1.md](ACP-SEC-Framework-v0.1.md) for the full specific
 
 ---
 
+## Acknowledgments
+
+- ERC-8183 specification by the Ethereum Foundation dAI team ([@DavideCrapis](https://github.com/DavideCrapis))
+- Hook security patterns inspired by [@ariessa_xyz](https://github.com/ariessa)'s reference implementations:
+  - `FundTransferHook.sol` — commitment immutability, fee-on-transfer detection
+  - `BiddingHook.sol` — signature scoping, replay protection
+  - `BaseERC8183Hook.sol` — selector routing pattern
+- Live hook simulator: [agentic-hook-simulator.ariessa.xyz](https://agentic-hook-simulator.ariessa.xyz)
+
+---
+
 ## x402 Module (v0.2.0)
 
 `x402` is Coinbase's open standard for machine-to-machine HTTP payments

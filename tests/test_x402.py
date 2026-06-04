@@ -303,10 +303,11 @@ class TestX402Checks:
 
 class TestOptInScoring:
     def test_optional_dimension_weights_table(self):
-        # v0.4.0 — added IDENTITY (10) + COMMERCE (10) on top of v0.3.1 set.
+        # v0.5.0 — added HOOK (10) + ERC8183 (10) on top of v0.4.0 set.
         assert OPTIONAL_DIMENSION_WEIGHTS == {
             "X402": 10, "MCP": 12, "PLUGIN": 3,
             "IDENTITY": 10, "COMMERCE": 10,
+            "HOOK": 10, "ERC8183": 10,
         }
 
     def test_total_max_score_without_optional(self):

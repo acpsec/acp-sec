@@ -1,6 +1,6 @@
 {
-  "updated": "2026-06-02",
-  "checks_per_scan": 38,
+  "updated": "2026-06-04",
+  "checks_per_scan": 49,
   "agents": [
     {
       "id": "claudeai",
@@ -19,6 +19,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-05-29",
       "previous_score": 52
     },
@@ -39,6 +44,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-05-29",
       "previous_score": 37
     },
@@ -61,6 +71,11 @@
       "job_types": [
         "service"
       ],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-05-29",
       "previous_score": 19
     },
@@ -83,6 +98,11 @@
       "job_types": [
         "fund-transfer"
       ],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-05-29",
       "previous_score": 9
     },
@@ -105,6 +125,11 @@
       "job_types": [
         "fund-transfer"
       ],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": false,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-05-29",
       "previous_score": 26
     },
@@ -125,6 +150,11 @@
       "fund_transfer": false,
       "evaluator": true,
       "job_types": [],
+      "erc8183_compliant": true,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": true,
+      "multi_chain": ["base", "ethereum"],
       "last_scan_date": "2026-05-24",
       "previous_score": 1
     },
@@ -145,6 +175,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-05-29",
       "previous_score": 34
     },
@@ -165,6 +200,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-05-29",
       "previous_score": 2
     },
@@ -185,6 +225,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -205,6 +250,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -225,6 +275,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -245,6 +300,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -265,6 +325,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -285,6 +350,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -305,6 +375,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -325,6 +400,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -345,6 +425,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -365,6 +450,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -385,6 +475,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-01",
       "previous_score": 2
     },
@@ -405,6 +500,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-02",
       "previous_score": 2
     },
@@ -425,6 +525,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-02",
       "previous_score": 2
     },
@@ -445,6 +550,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-02",
       "previous_score": 2
     },
@@ -465,6 +575,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-02",
       "previous_score": 2
     },
@@ -485,6 +600,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-02",
       "previous_score": 2
     },
@@ -505,6 +625,11 @@
       "fund_transfer": false,
       "evaluator": false,
       "job_types": [],
+      "erc8183_compliant": false,
+      "uses_hooks": false,
+      "non_custodial": null,
+      "has_evaluator": false,
+      "multi_chain": [],
       "last_scan_date": "2026-06-02",
       "previous_score": 2
     }

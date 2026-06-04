@@ -307,6 +307,63 @@ class CommerceConfig(BaseModel):
     lifecycle_documented: bool = False
 
 
+class HookConfig(BaseModel):
+    """
+    HOOK dimension posture (v0.5.0) — ERC-8183 hook contract security.
+
+    Patterns derived from reference implementations by @ariessa_xyz:
+    FundTransferHook.sol, BiddingHook.sol, BaseERC8183Hook.sol.
+    Opt-in via ``enabled``.
+    """
+    enabled: bool = False
+
+    # HOOK-01 (2 pts, HIGH) — hook contracts disclosed
+    hook_contracts_disclosed: bool = False
+    hook_addresses: list[str] = Field(default_factory=list)
+
+    # HOOK-02 (2 pts, HIGH) — commitment immutability
+    commitment_immutable: bool = False
+
+    # HOOK-03 (2 pts, HIGH) — fee-on-transfer detection
+    fee_on_transfer_detection: bool = False
+
+    # HOOK-04 (1 pt, MEDIUM) — signature replay protection
+    signature_replay_protection: bool = False
+    chain_id_in_signature: bool = False
+
+    # HOOK-05 (1 pt, MEDIUM) — reentrancy via CEI pattern
+    reentrancy_guard: bool = False
+
+    # HOOK-06 (2 pts, LOW) — expiry recovery
+    expiry_recovery: bool = False
+
+
+class ERC8183Config(BaseModel):
+    """
+    ERC8183 dimension posture (v0.5.0) — ERC-8183 protocol compliance.
+
+    Aligned with the Ethereum Foundation dAI team ERC-8183 spec
+    (@DavideCrapis).  Opt-in via ``enabled``.
+    """
+    enabled: bool = False
+
+    # ERC-01 (3 pts, HIGH) — job lifecycle disclosed
+    job_lifecycle_documented: bool = False
+
+    # ERC-02 (2 pts, HIGH) — hook architecture documented
+    hook_architecture_documented: bool = False
+
+    # ERC-03 (2 pts, MEDIUM) — evaluator role disclosed
+    evaluator_disclosed: bool = False
+    fee_split_documented: bool = False   # 90/5/5 or 95/5
+
+    # ERC-04 (2 pts, MEDIUM) — fund-transfer vs service-only declaration
+    job_type_declared: bool = False
+
+    # ERC-05 (1 pt, LOW) — multi-chain support
+    supported_chains: list[str] = Field(default_factory=list)
+
+
 class AgentConfig(BaseModel):
     """Configuration for an AI agent under assessment."""
     name: str
@@ -328,5 +385,7 @@ class AgentConfig(BaseModel):
     plugin: PluginConfig = Field(default_factory=PluginConfig)
     identity: IdentityConfig = Field(default_factory=IdentityConfig)
     commerce: CommerceConfig = Field(default_factory=CommerceConfig)
+    hook: HookConfig = Field(default_factory=HookConfig)
+    erc8183: ERC8183Config = Field(default_factory=ERC8183Config)
 
     model_config = {"populate_by_name": True}

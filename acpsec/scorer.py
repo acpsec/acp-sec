@@ -57,9 +57,18 @@ OPTIONAL_DIMENSION_WEIGHTS: dict[str, int] = {
     "PLUGIN":    3,   # v0.3.1 — skill-plugin security (Base MCP partner alignment)
     "IDENTITY": 10,   # v0.4.0 — Virtuals/ERC-8183 agent identity & wallet model
     "COMMERCE": 10,   # v0.4.0 — agent-commerce protocol surface (escrow + lifecycle)
+    "HOOK":     10,   # v0.5.0 — ERC-8183 hook contract security patterns
+    "ERC8183":  10,   # v0.5.0 — ERC-8183 protocol lifecycle compliance
 }
 
 CRITICAL_PENALTY = 5  # deducted per unmitigated CRITICAL failure
+
+# v0.5.0 — Hook-aware fund-transfer caps (augment the existing FUND_TRANSFER_CAP_PCT rule).
+# Applied in addition to existing caps; the minimum of all triggered caps wins.
+HOOK_FUND_TRANSFER_CAP_PCT = 30.0        # fund-transfer + HOOK score < 6/10
+AUTH_FUND_TRANSFER_CAP_PCT = 25.0        # fund-transfer + AUTH < 60%
+AUTH_FUND_TRANSFER_THRESHOLD_PCT = 60.0  # AUTH score percentage floor for fund-transfer agents
+HOOK_MIN_SCORE = 6.0                     # HOOK dimension must score at least 6/10
 
 # v0.4.0 — Custodial-wallet penalty.  Deducted when the agent's
 # IdentityConfig declares custodial_wallet=true.  Applied IN ADDITION TO
@@ -101,20 +110,22 @@ class ScoringEngine:
         checks: list[CheckResult],
         agent_config: Any | None = None,
         max_score: float | None = None,
+        dimension_results: list[DimensionResult] | None = None,
     ) -> float:
         """Apply score penalties.
 
-        Three rules, applied in order:
+        Five rules, applied in order (minimum of all triggered caps wins):
 
           1. CRITICAL_PENALTY (-5 per unmitigated CRITICAL failure).
           2. v0.4.0 CUSTODIAL_WALLET_PENALTY (-10) when
              agent_config.identity.custodial_wallet=true.
-          3. v0.4.0 FUND_TRANSFER_CAP_PCT — hard cap on the final score
-             when agent_config.commerce.fund_transfer=true AND any
-             CRITICAL check failed.  Cap is expressed as a percentage of
-             ``max_score`` so it works for /100, /110, and /120 budgets
-             alike.  Falls back to interpreting `score` directly as a
-             percentage when max_score is None (legacy callers).
+          3. v0.4.0 FUND_TRANSFER_CAP_PCT — hard cap when
+             agent_config.commerce.fund_transfer=true AND any CRITICAL check
+             failed.  Cap expressed as a percentage of max_score.
+          4. v0.5.0 HOOK_FUND_TRANSFER_CAP_PCT — hard cap when fund_transfer=true
+             AND HOOK dimension score < HOOK_MIN_SCORE (6/10).
+          5. v0.5.0 AUTH_FUND_TRANSFER_CAP_PCT — hard cap when fund_transfer=true
+             AND AUTH dimension score < AUTH_FUND_TRANSFER_THRESHOLD_PCT (60%).
         """
         critical_failures = [
             c for c in checks
@@ -131,19 +142,33 @@ class ScoringEngine:
         if identity is not None and getattr(identity, "custodial_wallet", False):
             result = max(0.0, result - CUSTODIAL_WALLET_PENALTY)
 
-        # 3. Fund-transfer cap
         commerce = getattr(agent_config, "commerce", None)
-        if (
-            commerce is not None
-            and getattr(commerce, "fund_transfer", False)
-            and critical_failures
-        ):
-            cap_pts = (
-                FUND_TRANSFER_CAP_PCT / 100.0 * max_score
-                if max_score and max_score > 0
-                else FUND_TRANSFER_CAP_PCT
-            )
-            result = min(result, cap_pts)
+        is_fund_transfer = (
+            commerce is not None and getattr(commerce, "fund_transfer", False)
+        )
+
+        def _cap(pct: float) -> float:
+            return pct / 100.0 * max_score if max_score and max_score > 0 else pct
+
+        # 3. Fund-transfer cap on any CRITICAL failure
+        if is_fund_transfer and critical_failures:
+            result = min(result, _cap(FUND_TRANSFER_CAP_PCT))
+
+        # Rules 4 & 5 require dimension_results for HOOK/AUTH lookup
+        if is_fund_transfer and dimension_results is not None:
+            dim_by_id = {d.dimension_id: d for d in dimension_results}
+
+            # 4. HOOK score below minimum threshold
+            hook_dim = dim_by_id.get("HOOK")
+            if hook_dim is not None and hook_dim.score < HOOK_MIN_SCORE:
+                result = min(result, _cap(HOOK_FUND_TRANSFER_CAP_PCT))
+
+            # 5. AUTH score below percentage threshold
+            auth_dim = dim_by_id.get("AUTH")
+            if auth_dim is not None and auth_dim.max_score > 0:
+                auth_pct = auth_dim.score / auth_dim.max_score * 100.0
+                if auth_pct < AUTH_FUND_TRANSFER_THRESHOLD_PCT:
+                    result = min(result, _cap(AUTH_FUND_TRANSFER_CAP_PCT))
 
         return result
 
@@ -178,6 +203,7 @@ class ScoringEngine:
         final_score = self.apply_penalties(
             raw_score, all_checks,
             agent_config=agent_config, max_score=max_score,
+            dimension_results=dimension_results,
         )
         # Band thresholds are expressed as PERCENTAGES, so we feed the
         # percentage to band() — keeps SECURE/HARDENED/... stable whether
@@ -198,15 +224,31 @@ class ScoringEngine:
                 c for c in all_checks
                 if c.severity == Severity.CRITICAL and c.status == CheckStatus.FAIL
             ]
-            if (
-                commerce is not None
-                and getattr(commerce, "fund_transfer", False)
-                and critical_failures
-            ):
+            is_fund_transfer = (
+                commerce is not None and getattr(commerce, "fund_transfer", False)
+            )
+            if is_fund_transfer and critical_failures:
                 warnings_.append(
                     "Fund-transfer agent with critical security gaps — "
                     "elevated risk (score capped)"
                 )
+            # v0.5.0 — hook and auth caps
+            if is_fund_transfer:
+                dim_by_id = {d.dimension_id: d for d in dimension_results}
+                hook_dim = dim_by_id.get("HOOK")
+                if hook_dim is not None and hook_dim.score < HOOK_MIN_SCORE:
+                    warnings_.append(
+                        f"Fund-transfer agent with weak hook security "
+                        f"(HOOK {hook_dim.score:.0f}/10 < {HOOK_MIN_SCORE:.0f}) — score capped at 30%"
+                    )
+                auth_dim = dim_by_id.get("AUTH")
+                if auth_dim is not None and auth_dim.max_score > 0:
+                    auth_pct = auth_dim.score / auth_dim.max_score * 100.0
+                    if auth_pct < AUTH_FUND_TRANSFER_THRESHOLD_PCT:
+                        warnings_.append(
+                            f"Fund-transfer agent with weak authentication "
+                            f"(AUTH {auth_pct:.0f}% < {AUTH_FUND_TRANSFER_THRESHOLD_PCT:.0f}%) — score capped at 25%"
+                        )
             if warnings_:
                 meta.setdefault("penalty_warnings", warnings_)
 

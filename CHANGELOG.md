@@ -5,6 +5,59 @@ All notable changes to ACP-SEC are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-06-04
+
+### Added — ERC-8183 compliance + hook contract security
+
+ACP-SEC v0.5.0 introduces two new optional dimensions and granular
+fund-transfer protections inspired by reference hook implementations
+from [@ariessa_xyz](https://github.com/ariessa).
+
+#### HOOK dimension (10 pts, opt-in)
+
+Six checks covering ERC-8183 hook contract security patterns:
+
+- **HOOK-01** (2 pts, HIGH) — Hook contracts disclosed
+- **HOOK-02** (2 pts, HIGH) — Commitment immutability enforced
+- **HOOK-03** (2 pts, HIGH) — Fee-on-transfer token detection
+- **HOOK-04** (1 pt, MEDIUM) — Signature replay protection
+- **HOOK-05** (1 pt, MEDIUM) — Reentrancy protection via CEI
+- **HOOK-06** (2 pts, LOW) — Expiry recovery mechanism
+
+Enable via `hook.enabled: true` in agent config.
+
+#### ERC8183 dimension (10 pts, opt-in)
+
+Five checks covering ERC-8183 protocol lifecycle compliance:
+
+- **ERC-01** (3 pts, HIGH) — Job lifecycle statuses disclosed
+- **ERC-02** (2 pts, HIGH) — Hook architecture documented
+- **ERC-03** (2 pts, MEDIUM) — Evaluator role and fee split disclosed
+- **ERC-04** (2 pts, MEDIUM) — Job type categorization declared
+- **ERC-05** (1 pt, LOW) — Multi-chain support documented
+
+Partial credit on ERC-01 (1.5 pts for ≥3/6 statuses) and ERC-03 (1 pt for evaluator-only).
+
+Enable via `erc8183.enabled: true` in agent config.
+
+#### Fund-transfer cap enhancements (scorer.py)
+
+Two new caps augment the existing critical-fail cap (minimum wins):
+
+- `HOOK score < 6/10` on a fund-transfer agent → score capped at 30%
+- `AUTH score < 60%` on a fund-transfer agent → score capped at 25%
+
+#### Leaderboard schema additions
+
+New agent fields: `erc8183_compliant`, `uses_hooks`, `non_custodial`, `has_evaluator`, `multi_chain`.
+
+### Acknowledgments
+
+Hook patterns inspired by [@ariessa_xyz](https://github.com/ariessa) reference implementations.
+ERC-8183 spec by Ethereum Foundation dAI team ([@DavideCrapis](https://github.com/DavideCrapis)).
+
+---
+
 ## [0.3.1] — 2026-05-26
 
 ### Added — Base MCP compatibility
