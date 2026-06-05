@@ -11,6 +11,14 @@
   <meta property="og:description" content="ERC-8183 reference implementation with ACP-SEC security best practices. On-chain verified on Base Sepolia.">
   <meta property="og:url" content="https://acpsec.app/agents/sentryagent">
   <meta name="theme-color" content="#0052FF">
+  <!-- ACP-SEC agent metadata — machine-readable for scanner -->
+  <meta name="agent-name" content="SentryAgent">
+  <meta name="agent-version" content="1.0.0">
+  <meta name="agent-owner" content="@acpsecagent">
+  <meta name="agent-wallet" content="0x197C7433d7b500691AD2eCEf4dffc1B01C123dfA">
+  <meta name="agent-contract" content="0x7770ED57E3993d4555951a557cd158a6Fb87A470">
+  <meta name="security-contact" content="security@acpsec.app">
+  <meta name="erc8183-compliant" content="true">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -545,7 +553,163 @@
       </div>
     </div>
 
-    <!-- SECTION 5 — Security Disclosure -->
+    <!-- SECTION 5 — Context Security (CTX) -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:rgba(0,82,255,.15);">🧩</div>
+        <h2>Context Security</h2>
+        <span class="section-label">CTX</span>
+      </div>
+      <div class="card-body">
+        <div class="hooks-list">
+          <div class="hook-item">
+            <span class="hook-icon">🔑</span>
+            <div>
+              <div class="hook-name">Job-scoped isolation</div>
+              <div class="hook-desc">Each job is isolated by a unique auto-incremented <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">jobId</code>. No shared mutable state between jobs — one job's data cannot affect another's execution path.</div>
+            </div>
+          </div>
+          <div class="hook-item">
+            <span class="hook-icon">🚧</span>
+            <div>
+              <div class="hook-name">No cross-job data leakage</div>
+              <div class="hook-desc">Job structs are stored in a <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">mapping(uint256 → Job)</code>. Access to any job requires its exact <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">jobId</code> — no iteration, no enumeration of foreign jobs.</div>
+            </div>
+          </div>
+          <div class="hook-item">
+            <span class="hook-icon">✅</span>
+            <div>
+              <div class="hook-name">Input validation on-chain</div>
+              <div class="hook-desc">All inputs validated via Solidity custom errors before any state change: <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">ZeroAddress</code>, <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">InvalidExpiry</code>, <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">InsufficientFunds</code>, <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">InvalidJobStatus</code>.</div>
+            </div>
+          </div>
+          <div class="hook-item">
+            <span class="hook-icon">⚛️</span>
+            <div>
+              <div class="hook-name">Atomic state transitions</div>
+              <div class="hook-desc">State changes are atomic per transaction — a job either fully transitions to the next status or the entire call reverts. No partial state is possible.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 6 — Injection Protection (INJ) -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:rgba(255,107,107,.15);">🛡️</div>
+        <h2>Injection Protection</h2>
+        <span class="section-label">INJ</span>
+      </div>
+      <div class="card-body">
+        <div class="hooks-list">
+          <div class="hook-item">
+            <span class="hook-icon">🤖</span>
+            <div>
+              <div class="hook-name">No natural language processing</div>
+              <div class="hook-desc">SentryAgent is a pure on-chain contract — it has no LLM, no prompt parsing, and no natural language input surface. Prompt injection attacks have zero attack surface.</div>
+            </div>
+          </div>
+          <div class="hook-item">
+            <span class="hook-icon">🔒</span>
+            <div>
+              <div class="hook-name">Typed input validation</div>
+              <div class="hook-desc">All inputs are Solidity-typed (<code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">address</code>, <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">uint256</code>, <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">bytes32</code>) with custom error reverts. Malformed inputs are rejected at the EVM level before execution.</div>
+            </div>
+          </div>
+          <div class="hook-item">
+            <span class="hook-icon">♻️</span>
+            <div>
+              <div class="hook-name">Reentrancy blocked via CEI</div>
+              <div class="hook-desc">Checks-Effects-Interactions pattern enforced across all fund-release functions — no external calls before all state mutations complete, preventing cross-function injection via callbacks.</div>
+            </div>
+          </div>
+          <div class="hook-item">
+            <span class="hook-icon">🚫</span>
+            <div>
+              <div class="hook-name">No delegatecall usage</div>
+              <div class="hook-desc">The contract contains no <code style="font-size:.75rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">delegatecall</code> — eliminating the entire class of storage-collision and context-hijacking attacks associated with proxy patterns.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 7 — Privacy Policy (PRIV) -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:rgba(139,92,246,.15);">🔏</div>
+        <h2>Privacy Policy</h2>
+        <span class="section-label">PRIV</span>
+      </div>
+      <div class="card-body">
+        <table class="sec-table">
+          <tr>
+            <td>PII collection</td>
+            <td class="check-yes">✓ None — no personally identifiable information collected</td>
+          </tr>
+          <tr>
+            <td>Data storage</td>
+            <td class="check-yes">✓ All agent data is public on-chain (transparent by design)</td>
+          </tr>
+          <tr>
+            <td>Off-chain storage</td>
+            <td class="check-yes">✓ None — no off-chain databases or logs</td>
+          </tr>
+          <tr>
+            <td>Cookies &amp; tracking</td>
+            <td class="check-yes">✓ No cookies, no analytics, no tracking scripts</td>
+          </tr>
+          <tr>
+            <td>Wallet addresses</td>
+            <td class="check-info">Pseudonymous — on-chain addresses are public but not linked to real-world identity by this contract</td>
+          </tr>
+          <tr>
+            <td>Data retention</td>
+            <td class="check-info">Immutable on-chain — data cannot be deleted (blockchain by design)</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- SECTION 8 — Output Security (OUT) -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:rgba(0,192,135,.15);">📤</div>
+        <h2>Output Security</h2>
+        <span class="section-label">OUT</span>
+      </div>
+      <div class="card-body">
+        <table class="sec-table">
+          <tr>
+            <td>Output channel</td>
+            <td class="check-yes">✓ All outputs are on-chain transactions — immutable and auditable</td>
+          </tr>
+          <tr>
+            <td>Deliverable integrity</td>
+            <td class="check-yes">✓ Stored as <code style="font-size:.78rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">bytes32</code> hash — cannot be tampered after submission</td>
+          </tr>
+          <tr>
+            <td>Tamper resistance</td>
+            <td class="check-yes">✓ On-chain state is append-only and consensus-verified</td>
+          </tr>
+          <tr>
+            <td>Approval requirement</td>
+            <td class="check-yes">✓ Evaluator must explicitly call <code style="font-size:.78rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">completeJob</code> or <code style="font-size:.78rem;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">rejectJob</code></td>
+          </tr>
+          <tr>
+            <td>Unilateral release</td>
+            <td style="color:#FF6B6B;font-weight:600;">✗ Blocked — no single party can release funds alone</td>
+          </tr>
+          <tr>
+            <td>Secrets in output</td>
+            <td class="check-yes">✓ None — contract emits only job lifecycle events, no secrets</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- SECTION 9 — Security Disclosure -->
     <div class="card">
       <div class="card-header">
         <div class="card-header-icon" style="background:rgba(240,192,0,.15);">🔐</div>
@@ -586,7 +750,7 @@
       </div>
     </div>
 
-    <!-- SECTION 6 — Governance -->
+    <!-- SECTION 10 — Governance -->
     <div class="card">
       <div class="card-header">
         <div class="card-header-icon" style="background:rgba(245,166,35,.15);">🏛️</div>
@@ -619,7 +783,7 @@
       </div>
     </div>
 
-    <!-- SECTION 7 — Links -->
+    <!-- SECTION 11 — Links -->
     <div class="card section-full">
       <div class="card-header">
         <div class="card-header-icon" style="background:rgba(0,192,135,.15);">🔗</div>
