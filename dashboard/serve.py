@@ -43,7 +43,8 @@ DASHBOARD_HTML       = Path(__file__).parent / "acp-sec-dashboard.html"
 SCANNER_HTML         = Path(__file__).parent / "scanner.html"
 MONITOR_HTML         = Path(__file__).parent / "monitor_dashboard.html"
 LEADERBOARD_HTML     = Path(__file__).parent / "leaderboard.html"
-SENTRYAGENT_HTML     = Path(__file__).parent / "agents" / "sentryagent.html"
+SENTRYAGENT_HTML            = Path(__file__).parent / "agents" / "sentryagent.html"
+SENTRYAGENT_PLAYGROUND_HTML = Path(__file__).parent / "agents" / "sentryagent" / "playground.html"
 STORE_FILE       = Path(__file__).parent / "score_store.json"
 SCAN_STORE       = Path(__file__).parent / "scan_store.json"
 LEADERBOARD_FILE = Path(__file__).parent / "leaderboard.json"
@@ -458,6 +459,12 @@ def monitor_page():
 def sentryagent_page():
     """Serve the SentryAgent public security disclosure page."""
     return send_file(SENTRYAGENT_HTML)
+
+
+@app.get("/agents/sentryagent/playground")
+def sentryagent_playground_page():
+    """Serve the SentryAgent interactive contract playground."""
+    return send_file(SENTRYAGENT_PLAYGROUND_HTML)
 
 
 @app.get("/leaderboard")
