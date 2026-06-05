@@ -45,6 +45,12 @@ MONITOR_HTML         = Path(__file__).parent / "monitor_dashboard.html"
 LEADERBOARD_HTML     = Path(__file__).parent / "leaderboard.html"
 SENTRYAGENT_HTML            = Path(__file__).parent / "agents" / "sentryagent.html"
 SENTRYAGENT_PLAYGROUND_HTML = Path(__file__).parent / "agents" / "sentryagent" / "playground.html"
+PRIVACY_HTML                = Path(__file__).parent / "privacy.html"
+TERMS_HTML                  = Path(__file__).parent / "terms.html"
+SECURITY_PAGE_HTML          = Path(__file__).parent / "security.html"
+SECURITY_TXT                = Path(__file__).parent / ".well-known" / "security.txt"
+ROBOTS_TXT                  = Path(__file__).parent / "robots.txt"
+SITEMAP_XML                 = Path(__file__).parent / "sitemap.xml"
 STORE_FILE       = Path(__file__).parent / "score_store.json"
 SCAN_STORE       = Path(__file__).parent / "scan_store.json"
 LEADERBOARD_FILE = Path(__file__).parent / "leaderboard.json"
@@ -465,6 +471,36 @@ def sentryagent_page():
 def sentryagent_playground_page():
     """Serve the SentryAgent interactive contract playground."""
     return send_file(SENTRYAGENT_PLAYGROUND_HTML)
+
+
+@app.get("/privacy")
+def privacy_page():
+    return send_file(PRIVACY_HTML)
+
+
+@app.get("/terms")
+def terms_page():
+    return send_file(TERMS_HTML)
+
+
+@app.get("/security")
+def security_page():
+    return send_file(SECURITY_PAGE_HTML)
+
+
+@app.get("/.well-known/security.txt")
+def security_txt():
+    return send_file(SECURITY_TXT, mimetype="text/plain")
+
+
+@app.get("/robots.txt")
+def robots_txt():
+    return send_file(ROBOTS_TXT, mimetype="text/plain")
+
+
+@app.get("/sitemap.xml")
+def sitemap_xml():
+    return send_file(SITEMAP_XML, mimetype="application/xml")
 
 
 @app.get("/leaderboard")

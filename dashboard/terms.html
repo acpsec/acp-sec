@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — ACP-SEC</title>
+  <link rel="icon" type="image/jpeg" href="/static/logo.jpg?v=6">
+  <meta name="description" content="ACP-SEC Terms of Service — open source, MIT license, no warranty, scan results are heuristic estimates.">
+  <meta name="theme-color" content="#0052FF">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0A0B0D; --bg2: #1C1D1F; --bg3: #2A2B2E;
+      --fg: #FFFFFF; --fg2: #8A919E; --fg3: #6B7280;
+      --border: #2A2B2E; --blue: #0052FF; --green: #00C087; --yellow: #F0C000;
+    }
+    body { font-family: 'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; }
+    .nav { display:flex;align-items:center;gap:4px;height:48px;padding:0 20px;background:var(--bg);border-bottom:1px solid var(--bg2);position:sticky;top:0;z-index:100;font-size:13px; }
+    .nav__brand { display:inline-flex;align-items:center;gap:6px;margin-right:16px;font-weight:700;font-size:14px;color:var(--blue);text-decoration:none; }
+    .nav__links { display:flex;gap:2px;flex:1; }
+    .nav__link { display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:6px;text-decoration:none;color:var(--fg2);font-weight:500;transition:background .15s,color .15s; }
+    .nav__link:hover { background:rgba(255,255,255,.06);color:#fff; }
+    @media(max-width:540px){ .nav{padding:0 12px;} .nav__link span:not(.ico){display:none;} }
+    .wrap { max-width: 740px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+    .page-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -.03em; margin-bottom: .4rem; }
+    .page-title span { background:linear-gradient(135deg,var(--blue),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+    .meta { font-size: .82rem; color: var(--fg3); margin-bottom: 2.5rem; }
+    h2 { font-size: 1rem; font-weight: 700; margin: 2rem 0 .6rem; color: var(--fg); }
+    p { font-size: .9rem; color: var(--fg2); margin-bottom: .75rem; }
+    ul { padding-left: 1.25rem; margin-bottom: .75rem; }
+    li { font-size: .9rem; color: var(--fg2); margin-bottom: .3rem; }
+    a { color: #4d8bff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .callout { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--yellow); border-radius: 8px; padding: .85rem 1rem; margin: 1rem 0; font-size: .88rem; color: var(--fg2); }
+    .license-block { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: 1rem 0; font-family: 'SF Mono',Consolas,monospace; font-size: .78rem; color: var(--fg2); white-space: pre-wrap; line-height: 1.6; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    footer { border-top: 1px solid var(--border); margin-top: 4rem; padding: 1.5rem 1.5rem; text-align: center; font-size: .78rem; color: var(--fg3); }
+    footer a { color: var(--fg3); text-decoration: none; }
+    footer a:hover { color: var(--fg); }
+  </style>
+</head>
+<body>
+<nav class="nav" role="navigation">
+  <a href="/" class="nav__brand">
+    <img src="/static/logo.jpg?v=6" style="height:26px;width:26px;border-radius:6px;object-fit:cover;" alt="">
+    <span>ACP-SEC</span>
+  </a>
+  <div class="nav__links">
+    <a href="/"            class="nav__link"><span class="ico">🏠</span><span>Dashboard</span></a>
+    <a href="/leaderboard" class="nav__link"><span class="ico">🏆</span><span>Leaderboard</span></a>
+    <a href="/scanner"     class="nav__link"><span class="ico">🔍</span><span>Scanner</span></a>
+    <a href="/monitor"     class="nav__link"><span class="ico">📊</span><span>Monitor</span></a>
+    <a href="/agents/sentryagent" class="nav__link"><span class="ico">🤖</span><span>Agents</span></a>
+  </div>
+</nav>
+
+<div class="wrap">
+  <h1 class="page-title"><span>ACP-SEC</span> Terms of Service</h1>
+  <p class="meta">Last updated: June 2026 · Effective immediately</p>
+
+  <div class="callout">
+    <strong style="color:var(--yellow);">Important:</strong> ACP-SEC scan results are <strong>heuristic estimates</strong>, not definitive security audits. They should not be used as the sole basis for financial or legal decisions.
+  </div>
+
+  <h2>1. Open Source License</h2>
+  <p>ACP-SEC is open source software released under the MIT License:</p>
+  <div class="license-block">MIT License
+
+Copyright (c) 2026 ACP-SEC Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.</div>
+
+  <h2>2. No Warranty</h2>
+  <p>The ACP-SEC service is provided "as is" without warranty of any kind, express or implied. We make no guarantees about:</p>
+  <ul>
+    <li>The accuracy, completeness, or reliability of scan results</li>
+    <li>Uptime or availability of the service</li>
+    <li>The security of any agent assessed by our scanner</li>
+    <li>Fitness for any particular purpose</li>
+  </ul>
+
+  <h2>3. Scan Results Are Heuristic Estimates</h2>
+  <p>ACP-SEC security scans are automated heuristic analyses of publicly available information. They are:</p>
+  <ul>
+    <li><strong>Not</strong> formal security audits conducted by certified professionals</li>
+    <li><strong>Not</strong> guarantees of security or insecurity</li>
+    <li>Based on observable signals from public websites and documentation</li>
+    <li>Subject to false positives and false negatives</li>
+    <li>Intended as a starting point for security assessment, not a final verdict</li>
+  </ul>
+
+  <h2>4. Not Financial or Legal Advice</h2>
+  <p>Nothing on ACP-SEC constitutes financial, investment, or legal advice. Security scores and leaderboard rankings should not be used to:</p>
+  <ul>
+    <li>Make investment decisions in tokens or protocols</li>
+    <li>Determine legal compliance or regulatory status</li>
+    <li>Replace professional security audits for production systems</li>
+  </ul>
+
+  <h2>5. Use at Your Own Risk</h2>
+  <p>By using ACP-SEC, you agree that:</p>
+  <ul>
+    <li>You use the service at your own risk</li>
+    <li>You will not rely solely on ACP-SEC scores for security-critical decisions</li>
+    <li>You will not use ACP-SEC to scan systems you do not own or have permission to scan</li>
+    <li>You will not attempt to abuse or overload the service</li>
+  </ul>
+
+  <h2>6. Acceptable Use</h2>
+  <p>ACP-SEC is designed for legitimate security research and agent assessment. Prohibited uses include:</p>
+  <ul>
+    <li>Automated bulk scanning without permission</li>
+    <li>Using the scanner as a reconnaissance tool for malicious purposes</li>
+    <li>Attempting to manipulate leaderboard rankings through fraudulent means</li>
+  </ul>
+
+  <h2>7. Changes to These Terms</h2>
+  <p>We may update these terms as the service evolves. Continued use of ACP-SEC after changes constitutes acceptance of the revised terms.</p>
+
+  <h2>8. Contact</h2>
+  <p>Questions about these terms: <a href="mailto:security@acpsec.app">security@acpsec.app</a></p>
+</div>
+
+<footer>
+  <a href="/">ACP-SEC</a> ·
+  <a href="/privacy">Privacy</a> ·
+  <a href="/terms">Terms</a> ·
+  <a href="/security">Security</a> ·
+  <a href="https://github.com/acpsecagent/acp-sec" target="_blank" rel="noopener">GitHub</a>
+</footer>
+</body>
+</html>

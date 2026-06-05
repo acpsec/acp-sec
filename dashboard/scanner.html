@@ -878,11 +878,15 @@
       <div class="field-group">
         <label class="field-label" for="targetUrlInput">Website URL to Scan</label>
         <input type="text" id="targetUrlInput" class="text-input"
-               placeholder="https://agent-website.com"
+               placeholder="https://example-agent.xyz"
                oninput="onUrlChange()"
                onkeydown="if(event.key==='Enter') startScan()"/>
         <div class="field-hint">
-          Paste the agent's website, landing page, or docs URL. We'll scrape it for security signals.
+          Enter the agent's <strong>documentation page</strong>, not just the homepage — e.g. <code style="font-size:.8em;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">https://agent.xyz/docs</code> or <code style="font-size:.8em;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;">https://agent.xyz/security</code>. Homepages often lack the security signals the scanner looks for.
+        </div>
+        <div class="field-hint" style="margin-top:.35rem;padding:.5rem .65rem;background:rgba(0,82,255,.07);border:1px solid rgba(0,82,255,.2);border-radius:6px;color:#8A919E;">
+          💡 <strong style="color:#fff;">Want to scan SentryAgent?</strong>
+          Use: <a href="#" onclick="document.getElementById('targetUrlInput').value='https://acpsec.app/agents/sentryagent';onUrlChange();return false;" style="color:#4d8bff;text-decoration:none;font-family:monospace;font-size:.85em;">acpsec.app/agents/sentryagent</a>
         </div>
       </div>
 
