@@ -43,3 +43,9 @@ dist/
 dashboard/scan_store.json
 dashboard/score_store.json
 *.log
+
+# ── Contracts (Hardhat) ───────────────────────────────────────────────────
+contracts/node_modules/
+contracts/.env
+contracts/artifacts/
+contracts/cache/
