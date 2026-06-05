@@ -39,10 +39,11 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 PORT = int(os.environ.get("PORT", 8080))
 
-DASHBOARD_HTML   = Path(__file__).parent / "acp-sec-dashboard.html"
-SCANNER_HTML     = Path(__file__).parent / "scanner.html"
-MONITOR_HTML     = Path(__file__).parent / "monitor_dashboard.html"
-LEADERBOARD_HTML = Path(__file__).parent / "leaderboard.html"
+DASHBOARD_HTML       = Path(__file__).parent / "acp-sec-dashboard.html"
+SCANNER_HTML         = Path(__file__).parent / "scanner.html"
+MONITOR_HTML         = Path(__file__).parent / "monitor_dashboard.html"
+LEADERBOARD_HTML     = Path(__file__).parent / "leaderboard.html"
+SENTRYAGENT_HTML     = Path(__file__).parent / "agents" / "sentryagent.html"
 STORE_FILE       = Path(__file__).parent / "score_store.json"
 SCAN_STORE       = Path(__file__).parent / "scan_store.json"
 LEADERBOARD_FILE = Path(__file__).parent / "leaderboard.json"
@@ -451,6 +452,12 @@ def scanner_page():
 def monitor_page():
     """Serve the continuous-monitoring dashboard (watchlist + score history + alerts)."""
     return send_file(MONITOR_HTML)
+
+
+@app.get("/agents/sentryagent")
+def sentryagent_page():
+    """Serve the SentryAgent public security disclosure page."""
+    return send_file(SENTRYAGENT_HTML)
 
 
 @app.get("/leaderboard")
