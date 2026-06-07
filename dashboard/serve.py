@@ -473,6 +473,76 @@ def sentryagent_playground_page():
     return send_file(SENTRYAGENT_PLAYGROUND_HTML)
 
 
+@app.post("/api/chat/sentryagent")
+def chat_sentryagent():
+    """SentryAgent AI chat proxy — forwards messages to Claude, keeps API key server-side.
+
+    Request body: { "messages": [{"role": "user"|"assistant", "content": "..."}] }
+    Returns:      { "ok": true, "reply": "..." }
+    """
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "AI chat not configured (ANTHROPIC_API_KEY not set)"}), 503
+
+    try:
+        import anthropic as _anthropic  # noqa: PLC0415
+    except ImportError:
+        return jsonify({"ok": False, "error": "anthropic package not installed — pip install anthropic"}), 503
+
+    payload  = request.get_json(force=True)
+    raw_msgs = payload.get("messages") or []
+
+    # Sanitise and cap history to prevent token abuse
+    messages = [
+        {"role": m["role"], "content": str(m["content"])[:4000]}
+        for m in raw_msgs[-20:]
+        if m.get("role") in ("user", "assistant") and m.get("content")
+    ]
+    if not messages:
+        return jsonify({"ok": False, "error": "'messages' must be a non-empty list"}), 422
+
+    SYSTEM = (
+        "You are SentryAgent, an ERC-8183 compliant smart contract agent deployed on "
+        "Base Sepolia testnet (chain 84532). Help users interact with the contract at "
+        "0x7770ED57E3993d4555951a557cd158a6Fb87A470 through natural language.\n\n"
+        "Available actions — emit a JSON code block when the user wants to act:\n"
+        "- createJob(provider, evaluator, expiryHours) — Create a job. provider and "
+        "evaluator are Ethereum addresses; expiryHours defaults to 24.\n"
+        "- fundJob(jobId, amountETH) — Fund a job; amountETH in ETH (e.g. 0.001).\n"
+        "- submitDeliverable(jobId, hash) — Submit bytes32 deliverable hash.\n"
+        "- completeJob(jobId) — Complete job, release funds to provider (evaluator only).\n"
+        "- rejectJob(jobId, reason) — Reject job, refund client (evaluator only).\n"
+        "- recoverExpiredJob(jobId) — Recover funds from expired job (client only).\n"
+        "- getJob(jobId) — Read-only: fetch job details.\n"
+        "- getAgentInfo() — Read-only: fetch agent name, version, purpose.\n\n"
+        "When the user wants an action respond with:\n"
+        "1. Brief friendly explanation\n"
+        '2. Action block on its own: ```json\n{"action": "actionName", "params": {...}}\n```\n\n'
+        "Read actions (getJob, getAgentInfo) execute immediately with no wallet needed. "
+        "Write actions show a confirm dialog before execution. "
+        "If required params are missing ask for them before emitting the JSON block. "
+        "Keep responses concise. This is testnet — no real funds at risk."
+    )
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=SYSTEM,
+            messages=messages,
+        )
+        reply = resp.content[0].text
+        return jsonify({"ok": True, "reply": reply}), 200
+    except _anthropic.APIError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": "Chat error: " + str(exc)}), 500
+
+
 @app.get("/privacy")
 def privacy_page():
     return send_file(PRIVACY_HTML)
