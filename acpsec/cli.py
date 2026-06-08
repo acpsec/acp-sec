@@ -624,5 +624,267 @@ def monitor_history(url: str, limit: int, db: Path | None) -> None:
     console.print()
 
 
+# ---------------------------------------------------------------------------
+# acpsec trust-score
+# ---------------------------------------------------------------------------
+
+# Slither check name → ContractSecurityInput field
+_SLITHER_MAP: dict[str, str] = {
+    "reentrancy-eth":        "has_reentrancy",
+    "reentrancy-no-eth":     "has_reentrancy",
+    "reentrancy-benign":     "has_reentrancy",
+    "reentrancy-events":     "has_reentrancy",
+    "controlled-delegatecall": "has_arbitrary_delegatecall",
+    "delegatecall-loop":     "has_arbitrary_delegatecall",
+    "suicidal":              "has_selfdestruct",
+    "tx-origin":             "uses_tx_origin_auth",
+    "unchecked-lowlevel":    "unchecked_low_level_calls",
+    "unchecked-send":        "unchecked_low_level_calls",
+    "pragma":                "floating_pragma",
+    "unprotected-upgrade":   "upgradeable_proxy_eoa_admin",
+    "protected-vars":        "missing_access_control",
+    "arbitrary-send-eth":    "has_arbitrary_delegatecall",
+}
+
+
+@main.command("trust-score")
+@click.option(
+    "--agent", "-a",
+    required=True,
+    help="On-chain contract address to assess (0x…).",
+)
+@click.option(
+    "--basescan-key",
+    envvar="BASESCAN_API_KEY",
+    default="",
+    help="Basescan API key (or set BASESCAN_API_KEY env var).",
+)
+@click.option(
+    "--output", "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Save Trust Score result to JSON file.",
+)
+@click.option(
+    "--no-slither",
+    is_flag=True,
+    default=False,
+    help="Skip Slither static analysis (use Basescan data only).",
+)
+@click.option(
+    "--chain",
+    type=click.Choice(["base-mainnet", "base-sepolia"]),
+    default="base-sepolia",
+    show_default=True,
+    help="Base network — selects the ACP Core / FundTransferHook reference "
+         "addresses and RPC endpoint. Base only (no BSC).",
+)
+@click.option(
+    "--scan-mode",
+    type=click.Choice(["external", "self_audit"]),
+    default="external",
+    show_default=True,
+    help="external: public/on-chain data only (private data left Unrated). "
+         "self_audit: operator-run scan that may supply private data "
+         "(Agent Card spend limits, off-chain signer policy).",
+)
+def trust_score(
+    agent: str,
+    basescan_key: str,
+    output: Path | None,
+    no_slither: bool,
+    chain: str,
+    scan_mode: str,
+) -> None:
+    """Compute a Trust Score (0-100, grade A-F) for an on-chain agent contract."""
+    import json as _json
+    import os
+
+    from .trust_score.data.basescan import BasescanClient, BasescanError
+    from .trust_score.data.slither_runner import (
+        SlitherNotAvailable,
+        SlitherRunner,
+        SlitherError,
+    )
+    from .trust_score.dimensions.contract_security import ContractSecurityInput, run as cs_run
+    from .trust_score.engine import TrustScoreEngine
+    from .trust_score.models import DimScore
+    from .trust_score.weights import WEIGHTS
+
+    from .trust_score.chains import get_chain
+
+    api_key = basescan_key or os.environ.get("BASESCAN_API_KEY", "")
+    if not api_key:
+        console.print(
+            "[red]Error:[/red] Basescan API key required. "
+            "Pass --basescan-key or set the BASESCAN_API_KEY environment variable."
+        )
+        sys.exit(1)
+
+    chain_cfg = get_chain(chain)
+    rpc_url = chain_cfg.rpc_url
+
+    console.print(
+        f"\n[bold]ACP-SEC Trust Score[/bold] — [cyan]{agent}[/cyan] "
+        f"(chain: {chain_cfg.name}, mode: {scan_mode})\n"
+    )
+
+    # --- Basescan: fetch contract verification status + ABI ---
+    console.print("  [dim]Fetching contract data from Basescan...[/dim]", end="\r")
+    try:
+        client = BasescanClient(api_key=api_key)
+        contract = client.get_contract(agent)
+    except BasescanError as exc:
+        console.print(f"[red]Basescan error:[/red] {exc}")
+        sys.exit(1)
+
+    # --- Slither: static analysis ---
+    slither_findings = []
+    if not no_slither:
+        console.print("  [dim]Running Slither static analysis...[/dim]    ", end="\r")
+        try:
+            runner = SlitherRunner()
+            slither_findings = runner.run(agent, api_key=api_key)
+        except SlitherNotAvailable:
+            console.print(
+                "  [yellow]Slither not installed — skipping static analysis. "
+                "Install with: pip install slither-analyzer[/yellow]"
+            )
+        except SlitherError as exc:
+            console.print(f"  [yellow]Slither error (skipping): {exc}[/yellow]")
+
+    # --- Map to ContractSecurityInput ---
+    cs_flags: dict[str, bool] = {field: False for field in [
+        "has_arbitrary_delegatecall", "has_unbounded_mint", "has_reentrancy",
+        "missing_access_control", "upgradeable_proxy_eoa_admin",
+        "has_selfdestruct", "uses_tx_origin_auth",
+        "unchecked_low_level_calls", "floating_pragma",
+    ]}
+    for finding in slither_findings:
+        mapped = _SLITHER_MAP.get(finding.check)
+        if mapped:
+            cs_flags[mapped] = True
+
+    cs_input = ContractSecurityInput(
+        source_verified=contract.source_verified,
+        **cs_flags,
+    )
+
+    # --- Dimension 1: Contract Security ---
+    dim1 = cs_run(cs_input)
+
+    # --- Dimension 2: Authority Scope (ABI + on-chain owner reads) ---
+    from .trust_score.data.authority_scope_adapter import AuthorityScopeAdapter
+    from .trust_score.dimensions.authority_scope import run as as_run
+    console.print("  [dim]Analyzing authority scope...[/dim]        ", end="\r")
+    try:
+        as_input = AuthorityScopeAdapter(
+            rpc_url=rpc_url, scan_mode=scan_mode, chain=chain
+        ).fetch(contract)
+        dim2 = as_run(as_input)
+    except Exception as exc:
+        console.print(f"  [yellow]Authority scope error (Unrated): {exc}[/yellow]")
+        from .trust_score.weights import WEIGHTS as _W
+        dim2 = DimScore(name="authority_scope", score=0.0, weight=_W["authority_scope"], rated=False)
+
+    # --- Dimension 6: Behavioral (on-chain Transfer event analysis) ---
+    from .trust_score.data.behavioral_adapter import BehavioralAdapter
+    from .trust_score.dimensions.behavioral import run as beh_run
+    console.print("  [dim]Analyzing on-chain behavior...[/dim]       ", end="\r")
+    try:
+        beh_input = BehavioralAdapter(rpc_url=rpc_url).fetch(agent)
+        dim6 = beh_run(beh_input)
+    except Exception as exc:
+        console.print(f"  [yellow]Behavioral error (Unrated): {exc}[/yellow]")
+        from .trust_score.weights import WEIGHTS as _W
+        dim6 = DimScore(name="behavioral", score=0.0, weight=_W["behavioral"], rated=False)
+
+    # --- Dimension 3: Identity (ERC-8004 registry + sybil check) ---
+    from .trust_score.data.erc8004_adapter import ERC8004Adapter
+    from .trust_score.dimensions.identity import run as id_run
+    console.print("  [dim]Analyzing identity (ERC-8004)...[/dim]    ", end="\r")
+    try:
+        id_input = ERC8004Adapter(rpc_url=rpc_url).fetch(agent)
+        dim3 = id_run(id_input)
+    except Exception as exc:
+        console.print(f"  [yellow]Identity error (Unrated): {exc}[/yellow]")
+        from .trust_score.weights import WEIGHTS as _W
+        dim3 = DimScore(name="identity", score=0.0, weight=_W["identity"], rated=False)
+
+    # --- Dimension 4: Hook Security (Slither + on-chain owner check) ---
+    from .trust_score.data.hook_security_adapter import HookSecurityAdapter
+    from .trust_score.dimensions.hook_security import run as hs_run
+    console.print("  [dim]Analyzing hook security...[/dim]           ", end="\r")
+    try:
+        hs_input = HookSecurityAdapter(rpc_url=rpc_url).fetch(agent)
+        dim4 = hs_run(hs_input)
+    except Exception as exc:
+        console.print(f"  [yellow]Hook security error (Unrated): {exc}[/yellow]")
+        from .trust_score.weights import WEIGHTS as _W
+        dim4 = DimScore(name="hook_security", score=0.0, weight=_W["hook_security"], rated=False)
+
+    # --- Dimension 5: ACP Compliance (ABI analysis) ---
+    from .trust_score.data.acp_compliance_adapter import ACPComplianceAdapter
+    from .trust_score.dimensions.acp_compliance import run as acp_run
+    console.print("  [dim]Analyzing ACP compliance...[/dim]          ", end="\r")
+    try:
+        acp_input = ACPComplianceAdapter(rpc_url=rpc_url, chain=chain).fetch(contract)
+        dim5 = acp_run(acp_input)
+    except Exception as exc:
+        console.print(f"  [yellow]ACP compliance error (Unrated): {exc}[/yellow]")
+        from .trust_score.weights import WEIGHTS as _W
+        dim5 = DimScore(name="acp_compliance", score=0.0, weight=_W["acp_compliance"], rated=False)
+
+    all_dims = [dim1, dim2, dim3, dim4, dim5, dim6]
+
+    # --- Engine ---
+    engine = TrustScoreEngine()
+    result = engine.assess(agent=agent, dim_scores=all_dims)
+
+    # --- Terminal output ---
+    grade_color = {"A": "green", "B": "cyan", "C": "yellow", "D": "red", "F": "red"}.get(
+        result.grade, "white"
+    )
+    rated_label = "" if result.rated else " [dim](Unrated — partial data)[/dim]"
+    console.print(
+        f"  Score:      [{grade_color}]{result.score}[/{grade_color}] / 100  "
+        f"Grade [{grade_color}]{result.grade}[/{grade_color}]{rated_label}"
+    )
+    console.print(f"  Multiplier: {result.multiplier:.2f}x  |  Critical: {result.critical}")
+    console.print(f"  Contract:   {'✓ verified' if contract.source_verified else '[red]✗ UNVERIFIED[/red]'}")
+
+    if result.top_findings:
+        console.print("\n  [bold]Findings:[/bold]")
+        for f in result.top_findings[:10]:
+            sev_color = {"CRITICAL": "red", "High": "red", "Medium": "yellow", "Low": "dim"}.get(
+                f.severity, "white"
+            )
+            console.print(f"    [{sev_color}]{f.severity:<10}[/{sev_color}] {f.dim}: {f.detail}")
+
+    unrated = [d for d in all_dims if not d.rated]
+    if unrated:
+        unrated_names = ", ".join(d.name for d in unrated)
+        console.print(
+            f"\n  [dim]Note: {unrated_names} are Unrated — data unavailable.[/dim]"
+        )
+
+    dims_with_unrated = [d for d in all_dims if d.unrated_checks]
+    if dims_with_unrated:
+        console.print(
+            "\n  [bold]Unrated checks[/bold] [dim](not verifiable in this scan):[/dim]"
+        )
+        for d in dims_with_unrated:
+            console.print(
+                f"    [dim]{d.name}:[/dim] {', '.join(d.unrated_checks)}"
+            )
+
+    console.print()
+
+    # --- JSON output ---
+    if output:
+        output.write_text(_json.dumps(result.model_dump(), indent=2))
+        console.print(f"  Saved to [cyan]{output}[/cyan]\n")
+
+
 if __name__ == "__main__":
     main()
