@@ -11,7 +11,11 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-DEFAULT_BASE_URL = "https://api.basescan.org/api"
+# Etherscan V2 unified endpoint. V1 chain-specific hosts (api.basescan.org,
+# api-sepolia.basescan.org, ...) were sunset 2025-08-15. V2 uses a single host
+# and selects the chain via the &chainid= query param; one API key works across
+# all supported chains.
+DEFAULT_BASE_URL = "https://api.etherscan.io/v2/api"
 
 _ABI_UNVERIFIED_SENTINEL = "Contract source code not verified"
 
@@ -39,17 +43,20 @@ class BasescanClient:
     def __init__(
         self,
         api_key: str,
+        chain_id: int,
         base_url: str = DEFAULT_BASE_URL,
         _fetcher: Callable[[str], Any] | None = None,
     ) -> None:
         self._api_key = api_key
+        self._chain_id = chain_id
         self._base_url = base_url
         self._fetch = _fetcher or _default_fetcher
 
     def get_contract(self, address: str) -> ContractData:
         url = (
             f"{self._base_url}"
-            f"?module=contract&action=getsourcecode"
+            f"?chainid={self._chain_id}"
+            f"&module=contract&action=getsourcecode"
             f"&address={address}"
             f"&apikey={self._api_key}"
         )

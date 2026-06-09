@@ -732,7 +732,7 @@ def trust_score(
     # --- Basescan: fetch contract verification status + ABI ---
     console.print("  [dim]Fetching contract data from Basescan...[/dim]", end="\r")
     try:
-        client = BasescanClient(api_key=api_key)
+        client = BasescanClient(api_key=api_key, chain_id=chain_cfg.chain_id)
         contract = client.get_contract(agent)
     except BasescanError as exc:
         console.print(f"[red]Basescan error:[/red] {exc}")
