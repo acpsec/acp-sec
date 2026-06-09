@@ -55,6 +55,16 @@ def _slither_not_available():
     return runner
 
 
+def _slither_erroring():
+    """Returns an injectable _slither_run that raises SlitherError (compile/fetch failure)."""
+    from acpsec.trust_score.data.slither_runner import SlitherError
+
+    def runner(target: str):
+        raise SlitherError("compilation failed")
+
+    return runner
+
+
 def _rpc_returning(owner_has_code: bool = False):
     """Returns an injectable _rpc callable with canned owner responses."""
     code = "0x" if not owner_has_code else "0x6060604052"
@@ -420,3 +430,42 @@ class TestEscrowDiversionAssessment:
         ]
         result = _adapter(slither=_slither_with_desc(findings)).fetch(HOOK_ADDRESS)
         assert result.hook_diverts_escrow is True
+
+
+# ---------------------------------------------------------------------------
+# Test 14: SlitherError degrades gracefully (like SlitherNotAvailable) instead
+# of propagating and nuking the whole dimension to Unrated.
+# ---------------------------------------------------------------------------
+
+class TestSlitherErrorDegrades:
+    def test_slither_error_does_not_raise(self):
+        result = _adapter(slither=_slither_erroring()).fetch(HOOK_ADDRESS)
+        assert isinstance(result, HookSecurityInput)
+
+    def test_slither_error_leaves_diverts_escrow_unrated(self):
+        result = _adapter(slither=_slither_erroring()).fetch(HOOK_ADDRESS)
+        assert result.hook_diverts_escrow is None
+
+    def test_slither_error_still_uses_rpc_signals(self):
+        result = _adapter(
+            rpc=_rpc_returning(owner_has_code=False),
+            slither=_slither_erroring(),
+        ).fetch(HOOK_ADDRESS)
+        assert result.hook_upgradeable_by_eoa is True
+
+
+# ---------------------------------------------------------------------------
+# Test 15: adapter accepts network + api_key (threaded to its internal Slither)
+# ---------------------------------------------------------------------------
+
+class TestNetworkAndApiKey:
+    def test_constructor_accepts_network_and_api_key(self):
+        from acpsec.trust_score.data.hook_security_adapter import HookSecurityAdapter
+        adapter = HookSecurityAdapter(
+            rpc_url="https://sepolia.base.org",
+            network="sepolia.base",
+            api_key="KEY",
+            _rpc=_rpc_returning(owner_has_code=False),
+            _slither_run=_slither_returning([]),
+        )
+        assert isinstance(adapter.fetch(HOOK_ADDRESS), HookSecurityInput)

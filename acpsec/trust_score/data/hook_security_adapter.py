@@ -116,24 +116,28 @@ def _default_rpc(rpc_url: str) -> Callable[[str, list], Any]:
     return call
 
 
-def _default_slither_run() -> Callable[[str], list]:
+def _default_slither_run(
+    network: str | None = None, api_key: str | None = None
+) -> Callable[[str], list]:
     from .slither_runner import SlitherRunner
     runner = SlitherRunner()
-    return lambda target: runner.run(target)
+    return lambda target: runner.run(target, api_key=api_key, network=network)
 
 
 class HookSecurityAdapter:
     def __init__(
         self,
         rpc_url: str = DEFAULT_RPC_URL,
+        network: str | None = None,
+        api_key: str | None = None,
         _rpc: Callable[[str, list], Any] | None = None,
         _slither_run: Callable[[str], list] | None = None,
     ) -> None:
         self._rpc = _rpc or _default_rpc(rpc_url)
-        self._slither_run = _slither_run or _default_slither_run()
+        self._slither_run = _slither_run or _default_slither_run(network, api_key)
 
     def fetch(self, address: str) -> HookSecurityInput:
-        from .slither_runner import SlitherNotAvailable
+        from .slither_runner import SlitherError, SlitherNotAvailable
 
         owner_is_eoa = self._owner_is_eoa(address)
 
@@ -156,7 +160,10 @@ class HookSecurityAdapter:
                     if val:
                         flags[key] = True
             diverts_escrow = assess_escrow_diversion(findings)
-        except SlitherNotAvailable:
+        except (SlitherNotAvailable, SlitherError):
+            # No completed Slither run: degrade to RPC-only signals and leave
+            # hook_diverts_escrow Unrated (None) rather than failing the whole
+            # dimension. A compile/fetch failure must not collapse the score.
             pass
 
         return HookSecurityInput(hook_diverts_escrow=diverts_escrow, **flags)

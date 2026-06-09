@@ -26,6 +26,11 @@ class ChainConfig:
     chain_id: int
     name: str
     rpc_url: str
+    # crytic-compile / Slither network prefix used to fetch verified source for
+    # an address target (e.g. "sepolia.base:0x..."). This is a source-fetch tag,
+    # NOT an explorer base URL — the Basescan client stays on the unified V2
+    # endpoint and selects chain via &chainid=.
+    slither_network: str = ""
     references: ReferenceContracts = field(default_factory=ReferenceContracts)
 
 
@@ -40,12 +45,14 @@ CHAINS: dict[int, ChainConfig] = {
         chain_id=8453,
         name="Base Mainnet",
         rpc_url="https://mainnet.base.org",
+        slither_network="base",
         references=_BASE_MAINNET_REFS,
     ),
     84532: ChainConfig(
         chain_id=84532,
         name="Base Sepolia",
         rpc_url="https://sepolia.base.org",
+        slither_network="sepolia.base",
         references=ReferenceContracts(),  # TODO: record testnet ACP deployment addresses
     ),
 }
@@ -83,3 +90,12 @@ def get_chain(identifier: int | str) -> ChainConfig:
 def reference_contracts(identifier: int | str) -> ReferenceContracts:
     """Return the conformance reference contracts for a chain."""
     return get_chain(identifier).references
+
+
+def slither_network(identifier: int | str) -> str:
+    """Return the crytic-compile / Slither network prefix for a chain.
+
+    Used to build `<network>:<address>` targets so Slither fetches verified
+    source from the right explorer (e.g. "sepolia.base" for Base Sepolia).
+    """
+    return get_chain(identifier).slither_network

@@ -10,6 +10,7 @@ from acpsec.trust_score.chains import (
     UnknownChainError,
     get_chain,
     reference_contracts,
+    slither_network,
 )
 
 ACP_CORE = "0x238E541BfefD82238730D00a2208E5497F1832E0"
@@ -103,3 +104,25 @@ class TestChainConfigShape:
 
     def test_base_mainnet_rpc_matches_existing(self):
         assert get_chain(8453).rpc_url == "https://mainnet.base.org"
+
+
+# ---------------------------------------------------------------------------
+# Slither / crytic-compile network prefix (source-fetch tag, NOT an explorer URL)
+# ---------------------------------------------------------------------------
+
+class TestSlitherNetwork:
+    def test_base_mainnet_prefix(self):
+        assert slither_network(8453) == "base"
+
+    def test_base_sepolia_prefix(self):
+        assert slither_network(84532) == "sepolia.base"
+
+    def test_by_name_alias(self):
+        assert slither_network("base-sepolia") == "sepolia.base"
+
+    def test_on_chain_config(self):
+        assert get_chain(84532).slither_network == "sepolia.base"
+
+    def test_unknown_chain_raises(self):
+        with pytest.raises(UnknownChainError):
+            slither_network(1)

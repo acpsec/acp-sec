@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from typing import Callable
 
@@ -36,7 +37,11 @@ class SlitherFinding:
 
 
 def _default_subprocess_run(cmd: list[str]) -> tuple[int, str, str]:
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # Run in a clean temp dir so crytic-compile's platform auto-detection does
+    # not pick up a surrounding Hardhat/Foundry project and treat an address
+    # target as a local file path.
+    with tempfile.TemporaryDirectory() as workdir:
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir)
     return result.returncode, result.stdout, result.stderr
 
 
@@ -49,8 +54,26 @@ class SlitherRunner:
         self._executable = executable
         self._run = _subprocess_run or _default_subprocess_run
 
-    def run(self, target: str, api_key: str | None = None) -> list[SlitherFinding]:
-        cmd = [self._executable, target, "--json", "-"]
+    @staticmethod
+    def _resolve_target(target: str, network: str | None) -> str:
+        """Prefix a bare 0x address with the crytic network tag (`base:0x...`).
+
+        Local-path targets and already-prefixed targets are passed through
+        unchanged.
+        """
+        if not network:
+            return target
+        if target.startswith("0x") and ":" not in target:
+            return f"{network}:{target}"
+        return target
+
+    def run(
+        self,
+        target: str,
+        api_key: str | None = None,
+        network: str | None = None,
+    ) -> list[SlitherFinding]:
+        cmd = [self._executable, self._resolve_target(target, network), "--json", "-"]
         if api_key:
             cmd += ["--etherscan-apikey", api_key]
 

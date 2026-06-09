@@ -183,3 +183,64 @@ class TestCommandConstruction:
         runner, calls = _capturing_runner(0, _slither_json([]))
         SlitherRunner(executable="/opt/slither/bin/slither", _subprocess_run=runner).run("0xDEAD")
         assert calls[0][0] == "/opt/slither/bin/slither"
+
+
+# ---------------------------------------------------------------------------
+# Network prefix — crytic-compile needs <network>:<address> for non-mainnet
+# source fetches (e.g. sepolia.base:0x... for Base Sepolia).
+# ---------------------------------------------------------------------------
+
+class TestNetworkPrefix:
+    def test_network_prepended_to_address_target(self):
+        from acpsec.trust_score.data.slither_runner import SlitherRunner
+        runner, calls = _capturing_runner(0, _slither_json([]))
+        SlitherRunner(_subprocess_run=runner).run("0xDEAD", network="sepolia.base")
+        assert any("sepolia.base:0xDEAD" in arg for arg in calls[0])
+
+    def test_no_network_leaves_address_bare(self):
+        from acpsec.trust_score.data.slither_runner import SlitherRunner
+        runner, calls = _capturing_runner(0, _slither_json([]))
+        SlitherRunner(_subprocess_run=runner).run("0xDEAD")
+        assert "0xDEAD" in calls[0]
+        assert not any(":0xDEAD" in arg for arg in calls[0])
+
+    def test_network_not_prepended_to_local_path(self):
+        from acpsec.trust_score.data.slither_runner import SlitherRunner
+        runner, calls = _capturing_runner(0, _slither_json([]))
+        SlitherRunner(_subprocess_run=runner).run("contracts/Foo.sol", network="base")
+        assert "contracts/Foo.sol" in calls[0]
+        assert not any("base:contracts" in arg for arg in calls[0])
+
+    def test_already_prefixed_target_not_double_prefixed(self):
+        from acpsec.trust_score.data.slither_runner import SlitherRunner
+        runner, calls = _capturing_runner(0, _slither_json([]))
+        SlitherRunner(_subprocess_run=runner).run("base:0xDEAD", network="base")
+        assert not any("base:base:" in arg for arg in calls[0])
+
+
+# ---------------------------------------------------------------------------
+# Default subprocess runs in a clean temp cwd so crytic-compile does not
+# mis-detect a surrounding Hardhat/Foundry project and treat the address as a
+# local file path.
+# ---------------------------------------------------------------------------
+
+class TestCleanCwd:
+    def test_default_subprocess_runs_in_clean_tempdir(self, monkeypatch):
+        import os
+        import acpsec.trust_score.data.slither_runner as sr
+
+        captured: dict = {}
+
+        class _Completed:
+            returncode = 0
+            stdout = _slither_json([])
+            stderr = ""
+
+        def fake_run(cmd, capture_output, text, cwd=None):
+            captured["cwd"] = cwd
+            return _Completed()
+
+        monkeypatch.setattr(sr.subprocess, "run", fake_run)
+        sr._default_subprocess_run(["slither", "0xDEAD", "--json", "-"])
+        assert captured["cwd"] is not None
+        assert captured["cwd"] != os.getcwd()

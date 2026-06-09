@@ -723,6 +723,7 @@ def trust_score(
 
     chain_cfg = get_chain(chain)
     rpc_url = chain_cfg.rpc_url
+    slither_net = chain_cfg.slither_network
 
     console.print(
         f"\n[bold]ACP-SEC Trust Score[/bold] — [cyan]{agent}[/cyan] "
@@ -744,7 +745,7 @@ def trust_score(
         console.print("  [dim]Running Slither static analysis...[/dim]    ", end="\r")
         try:
             runner = SlitherRunner()
-            slither_findings = runner.run(agent, api_key=api_key)
+            slither_findings = runner.run(agent, api_key=api_key, network=slither_net)
         except SlitherNotAvailable:
             console.print(
                 "  [yellow]Slither not installed — skipping static analysis. "
@@ -816,7 +817,9 @@ def trust_score(
     from .trust_score.dimensions.hook_security import run as hs_run
     console.print("  [dim]Analyzing hook security...[/dim]           ", end="\r")
     try:
-        hs_input = HookSecurityAdapter(rpc_url=rpc_url).fetch(agent)
+        hs_input = HookSecurityAdapter(
+            rpc_url=rpc_url, network=slither_net, api_key=api_key
+        ).fetch(agent)
         dim4 = hs_run(hs_input)
     except Exception as exc:
         console.print(f"  [yellow]Hook security error (Unrated): {exc}[/yellow]")
