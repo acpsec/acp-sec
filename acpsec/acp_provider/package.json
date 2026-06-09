@@ -1,0 +1,14 @@
+{
+  "name": "acpsec-acp-provider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "acp-sec ACP Provider (seller) -- exposes the Trust Score scanner as an ACP agent on Base Sepolia.",
+  "main": "provider.mjs",
+  "scripts": {
+    "start": "node provider.mjs"
+  },
+  "dependencies": {
+    "@virtuals-protocol/acp-node": "0.3.0-beta.40"
+  }
+}
