@@ -1,0 +1,79 @@
+{
+  "agent": "0x7770ED57E3993d4555951a557cd158a6Fb87A470",
+  "erc8004_id": "",
+  "score": 80,
+  "grade": "B",
+  "multiplier": 0.85,
+  "critical": false,
+  "subscores": {
+    "contract_security": {
+      "score": 100,
+      "unrated_checks": []
+    },
+    "authority_scope": {
+      "score": 60,
+      "unrated_checks": [
+        "signer_unrestricted",
+        "agent_card_no_spend_limit"
+      ]
+    },
+    "identity": {
+      "score": 50,
+      "unrated_checks": []
+    },
+    "hook_security": {
+      "score": 100,
+      "unrated_checks": []
+    },
+    "acp_compliance": {
+      "score": 70,
+      "unrated_checks": [
+        "fee_split_nonconformant"
+      ]
+    },
+    "behavioral": {
+      "score": 100,
+      "unrated_checks": []
+    }
+  },
+  "top_findings": [
+    {
+      "dim": "authority_scope",
+      "severity": "High",
+      "detail": "no on-chain spending budget or per-period cap"
+    },
+    {
+      "dim": "identity",
+      "severity": "High",
+      "detail": "no ERC-8004 identity registered"
+    },
+    {
+      "dim": "identity",
+      "severity": "High",
+      "detail": "claimed handle unverified"
+    },
+    {
+      "dim": "acp_compliance",
+      "severity": "High",
+      "detail": "missing ACP v3 lifecycle phase (1 of 1)"
+    },
+    {
+      "dim": "authority_scope",
+      "severity": "Medium",
+      "detail": "no pause / emergency-stop mechanism"
+    },
+    {
+      "dim": "acp_compliance",
+      "severity": "Medium",
+      "detail": "settlement not atomic"
+    },
+    {
+      "dim": "authority_scope",
+      "severity": "Low",
+      "detail": "no key rotation path documented"
+    }
+  ],
+  "scanned_at": "2026-06-09T08:28:23Z",
+  "scanner_version": "acpsec-v0.5.0",
+  "rated": true
+}

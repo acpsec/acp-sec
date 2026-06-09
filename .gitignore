@@ -49,3 +49,7 @@ contracts/node_modules/
 contracts/.env
 contracts/artifacts/
 contracts/cache/
+
+# ── Scans — ignore ad-hoc scan output, keep verified baselines ─────────────
+scans/*.json
+!scans/baseline-*.json
