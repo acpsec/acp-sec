@@ -31,6 +31,9 @@ import AcpClient, {
   baseSepoliaAcpConfigV2,
 } from "@virtuals-protocol/acp-node";
 
+import { BoundedSet } from "./boundedSet.mjs";
+import { logStartup, installGracefulShutdown } from "./lifecycle.mjs";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..");
 
@@ -155,25 +158,44 @@ async function main() {
   });
   await acpClient.init();
 
-  console.log(`acp-sec Provider live. Seller ${sellerAddress} on ${CHAIN}.`);
-  console.log(`Polling every ${POLL_INTERVAL_MS}ms...`);
+  logStartup({
+    agent: sellerAddress,        // public smart-account address — fine to log
+    chain: CHAIN,
+    entityId,                    // public entity id, not key material
+    pollIntervalMs: POLL_INTERVAL_MS,
+    // NEVER log WHITELISTED_WALLET_PRIVATE_KEY / signer material here
+  });
 
   // Dedupe: act at most once per (jobId, phase) to avoid double-submits while a
-  // tx is still confirming between polls.
-  const handled = new Set();
+  // tx is still confirming between polls. Bounded so a long-running provider
+  // doesn't leak memory accumulating every job id it has ever seen.
+  const handled = new BoundedSet(1000);
 
-  while (true) {
+  let running = true; // poll loop continues while true
+  let busy = false;   // true while a single job is being processed
+
+  installGracefulShutdown({
+    onStop: () => { running = false; },
+    isBusy: () => busy,
+    cleanup: async () => { /* SDK client has no explicit close; nothing to flush */ },
+  });
+
+  while (running) {
     try {
       const jobs = await acpClient.getActiveJobs();
       for (const job of jobs || []) {
+        if (!running) break; // stop promptly on shutdown
         const key = `${job.id}:${job.phase}`;
         if (handled.has(key)) continue;
-        handled.add(key);
+        busy = true;
         try {
+          handled.add(key);
           await handleJob(job, sellerAddress);
         } catch (err) {
           console.error(`[job ${job.id}] error: ${err.message}`);
           handled.delete(key); // allow retry next poll
+        } finally {
+          busy = false;
         }
       }
     } catch (err) {
