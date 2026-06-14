@@ -39,7 +39,6 @@ const REPO_ROOT = path.resolve(HERE, "..", "..");
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 20000);
 const CHAIN = process.env.ACPSEC_CHAIN || "base-sepolia";
-const ADDRESS_RE = /0x[a-fA-F0-9]{40}/;
 
 function requireEnv(name, fallback) {
   const value = process.env[name] || (fallback ? process.env[fallback] : undefined);
@@ -64,13 +63,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Run the Python bridge to scan `requirement` and return the deliverable object.
-function runScan(requirement) {
+// Invoke the Python bridge (`python -m acpsec.acp_provider <requirement> ...`)
+// and resolve its stdout JSON. Rejects on non-JSON output, non-zero exit, or an
+// `error` payload. This is the single channel to the Python source of truth.
+function runBridge(requirement, extraArgs) {
   return new Promise((resolve, reject) => {
     const py = defaultPython();
     const reqStr =
       typeof requirement === "string" ? requirement : JSON.stringify(requirement);
-    const args = ["-m", "acpsec.acp_provider", reqStr, "--chain", CHAIN];
+    const args = ["-m", "acpsec.acp_provider", reqStr, ...extraArgs];
     const child = spawn(py, args, { cwd: REPO_ROOT });
 
     let stdout = "";
@@ -84,15 +85,29 @@ function runScan(requirement) {
         payload = JSON.parse(stdout.trim());
       } catch {
         return reject(
-          new Error(`scan bridge produced non-JSON output (exit ${code}): ${stderr.trim()}`),
+          new Error(`bridge produced non-JSON output (exit ${code}): ${stderr.trim()}`),
         );
       }
       if (code !== 0 || payload.error) {
-        return reject(new Error(payload.detail || stderr.trim() || `scan exit ${code}`));
+        return reject(new Error(payload.detail || stderr.trim() || `bridge exit ${code}`));
       }
       resolve(payload);
     });
   });
+}
+
+// REQUEST phase: ask the Python source of truth whether to accept this job.
+// Returns { accept, reason, target } -- both accept and reject resolve (a
+// rejection is a valid decision, not an error).
+function evaluateRequest(requirement) {
+  return runBridge(requirement, ["--mode", "evaluate"]);
+}
+
+// TRANSACTION phase: run the Trust Score scan and return the deliverable object.
+// The bridge re-derives the target via the same evaluate_request, so the scanned
+// address is guaranteed identical to the one accepted at REQUEST time.
+function runScan(requirement) {
+  return runBridge(requirement, ["--chain", CHAIN]);
 }
 
 async function handleJob(job, sellerAddress) {
@@ -102,22 +117,18 @@ async function handleJob(job, sellerAddress) {
   const phaseName = AcpJobPhases[job.phase];
 
   if (job.phase === AcpJobPhases.REQUEST) {
-    const reqStr =
-      typeof job.requirement === "string"
-        ? job.requirement
-        : JSON.stringify(job.requirement || {});
-    const target = (reqStr.match(ADDRESS_RE) || [])[0];
-    if (target) {
-      console.log(`[job ${job.id}] REQUEST accepted -- target ${target}`);
-      await job.accept("acp-sec can run a Trust Score scan on this address.");
+    // Decision (parse + accept/reject) comes from the single Python source of
+    // truth -- no address parsing lives here anymore.
+    const decision = await evaluateRequest(job.requirement);
+    if (decision.accept) {
+      console.log(`[job ${job.id}] REQUEST accepted -- target ${decision.target}`);
+      await job.accept(decision.reason);
       await job.createRequirement(
-        `acp-sec accepted job ${job.id}. Pay to escrow to receive the Trust Score for ${target}.`,
+        `acp-sec accepted job ${job.id}. Pay to escrow to receive the Trust Score for ${decision.target}.`,
       );
     } else {
-      console.log(`[job ${job.id}] REQUEST rejected -- no address in requirement`);
-      await job.reject(
-        'No contract address in request. Send a 0x address, e.g. {"address":"0x..."}.',
-      );
+      console.log(`[job ${job.id}] REQUEST rejected -- ${decision.reason}`);
+      await job.reject(decision.reason);
     }
     return;
   }
