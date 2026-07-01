@@ -136,3 +136,11 @@ rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
 
 Overall average: **60-90% token reduction** on common development operations.
 <!-- /rtk-instructions -->
+
+---
+
+## Project Stack (acp-sec)
+
+This project follows **Preset 2 (Web3)** with a **Python backend**.
+See `~/.claude/STACK-REFERENCE.md` for the full preset definition.
+Scope: Base Mainnet (8453) + Base Sepolia (84532).

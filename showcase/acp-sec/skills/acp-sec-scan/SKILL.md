@@ -1,15 +1,41 @@
 ---
 name: acp-sec-scan
 description: Run an acp-sec Trust Score scan on an on-chain ACP agent contract and interpret the result.
-version: 0.1.0
+version: 0.5.0
 ---
 
 # acp-sec Trust Score Scan
 
 Use this skill to assess whether an on-chain agent contract is safe to transact
-with, by computing an acp-sec **Trust Score** (0-100, grade A-F) across six
+with, by computing an acp-sec **Trust Score** (0-100, graded A to F) across six
 security dimensions. Works standalone (CLI) or as the executor behind the
 acp-sec ACP Provider.
+
+## Prerequisites
+
+Complete these before invoking the skill — copying the skill folder does **not**
+install the `acpsec` CLI it calls.
+
+1. Install `acpsec` from source:
+   ```bash
+   git clone https://github.com/acpsec/acp-sec.git
+   cd acp-sec
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -e .
+   ```
+2. Optional but recommended — enable Dimension 1 (Contract Security) deep checks:
+   ```bash
+   pip install slither-analyzer
+   ```
+3. Export a `BASESCAN_API_KEY` (Etherscan V2 unified key — one key works for Base
+   mainnet and Base Sepolia via the `chainid` param):
+   ```bash
+   export BASESCAN_API_KEY=your_key_here   # get one at https://etherscan.io/apis
+   ```
+4. Verify the install:
+   ```bash
+   acpsec trust-score --help
+   ```
 
 ## Inputs
 
@@ -32,9 +58,9 @@ acp-sec ACP Provider.
    ```
 3. Read the result: `score`, `grade`, `critical`, the six `subscores`,
    `top_findings` (sorted by severity), and any `unrated_checks`.
-4. Interpret against the grade bands: 90+ SECURE, 70-89 HARDENED, 50-69
-   VULNERABLE, 30-49 CRITICAL, 0-29 COMPROMISED. Treat a `critical: true` result
-   as a hard stop regardless of the numeric score.
+4. Interpret the numeric score (0-100) and letter grade (A ≥ 90, B ≥ 75, C ≥ 60,
+   D ≥ 40, F below 40) together with the subscores and findings. Treat a
+   `critical: true` result as a hard stop regardless of the numeric score.
 5. Note Unrated dimensions: missing data is reported as Unrated and lowers the
    confidence multiplier; do not read it as "safe".
 

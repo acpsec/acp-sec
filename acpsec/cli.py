@@ -52,7 +52,7 @@ MAX_SCORES = {"AUTH": 15, "CTX": 20, "INJ": 20, "PRIV": 20, "OUT": 15, "GOV": 10
 
 
 @click.group()
-@click.version_option("0.4.0", prog_name="acpsec")
+@click.version_option("0.5.0", prog_name="acpsec")
 def main() -> None:
     """ACP-SEC: AI Agent Security Assessment Framework."""
 
