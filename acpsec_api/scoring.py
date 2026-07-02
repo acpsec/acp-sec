@@ -12,12 +12,10 @@ from __future__ import annotations
 
 from typing import Any
 
-try:
-    from acpsec.scorer import ScoringEngine
+from acpsec_api.availability import ACPSEC_AVAILABLE
 
-    ACPSEC_AVAILABLE = True
-except ImportError:
-    ACPSEC_AVAILABLE = False
+if ACPSEC_AVAILABLE:
+    from acpsec.scorer import ScoringEngine
 
 
 # Score band table — only used when acpsec is unavailable.

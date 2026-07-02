@@ -16,19 +16,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
+from acpsec_api.availability import ACPSEC_AVAILABLE
 from acpsec_api.deps import get_score_store
 from acpsec_api.fallback_catalogue import ASF_CONTROLS_DEFAULT, FALLBACK_CHECKS
 from acpsec_api.scoring import auto_normalise, compute_manual_score
 from acpsec_api.store import ScoreStore
 
-# acpsec catalogue availability — same try/except probe Flask uses. When the
-# package is present it is the single source of truth for the check list.
-try:
+# When acpsec is present it is the single source of truth for the check list.
+if ACPSEC_AVAILABLE:
     from acpsec.catalogue import get_check_catalogue
-
-    ACPSEC_AVAILABLE = True
-except ImportError:
-    ACPSEC_AVAILABLE = False
 
 router = APIRouter()
 

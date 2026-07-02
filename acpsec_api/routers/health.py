@@ -13,19 +13,9 @@ import os
 
 from fastapi import APIRouter
 
+from acpsec_api.availability import ACPSEC_AVAILABLE
+
 router = APIRouter()
-
-# acpsec package availability — mirror the Flask import probe: True iff the
-# scoring/model/catalogue modules import cleanly, False otherwise. Resolved
-# once at import time so the check is a cheap flag, not a per-request import.
-try:
-    from acpsec.scorer import ScoringEngine  # noqa: F401
-    from acpsec.models import CheckStatus  # noqa: F401
-    from acpsec.catalogue import get_check_catalogue  # noqa: F401
-
-    ACPSEC_AVAILABLE = True
-except ImportError:
-    ACPSEC_AVAILABLE = False
 
 
 @router.get("/api/health")
