@@ -8,7 +8,7 @@ acpsec scoring/model/catalogue/onchain modules — that happens in Group 2.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from acpsec_api.routers import health
+from acpsec_api.routers import health, score
 
 app = FastAPI(
     title="ACP-SEC API",
@@ -27,3 +27,4 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(score.router)

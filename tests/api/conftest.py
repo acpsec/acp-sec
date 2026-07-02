@@ -11,12 +11,15 @@ must keep passing until cutover, so nothing in this file should mutate it.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from acpsec_api.deps import get_score_store
 from acpsec_api.main import app as fastapi_app
+from acpsec_api.store import ScoreStore
 from dashboard.serve import app as flask_app
 
 
@@ -24,6 +27,26 @@ from dashboard.serve import app as flask_app
 def fastapi_client() -> TestClient:
     """TestClient bound to the FastAPI app under migration."""
     return TestClient(fastapi_app)
+
+
+@pytest.fixture
+def temp_store(tmp_path: Path) -> ScoreStore:
+    """A ScoreStore backed by a throwaway temp file (never the real store)."""
+    return ScoreStore(path=tmp_path / "score_store.json")
+
+
+@pytest.fixture
+def isolated_client(temp_store: ScoreStore):
+    """FastAPI TestClient whose ScoreStore dependency is overridden with a
+    temp-backed store, so score-read tests never touch dashboard/score_store.json.
+
+    Yields ``(client, temp_store)`` so tests can seed the store directly.
+    """
+    fastapi_app.dependency_overrides[get_score_store] = lambda: temp_store
+    try:
+        yield TestClient(fastapi_app), temp_store
+    finally:
+        fastapi_app.dependency_overrides.pop(get_score_store, None)
 
 
 @pytest.fixture
