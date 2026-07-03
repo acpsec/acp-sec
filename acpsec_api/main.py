@@ -8,7 +8,11 @@ acpsec scoring/model/catalogue/onchain modules — that happens in Group 2.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from acpsec_api.routers import health, leaderboard, score
+from acpsec_api.scanner_auth import (
+    ScannerAccessDenied,
+    scanner_access_denied_handler,
+)
+from acpsec_api.routers import health, leaderboard, scanner, score
 
 app = FastAPI(
     title="ACP-SEC API",
@@ -26,6 +30,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Scanner gate denials render as Flask's flat 401 body (not FastAPI's {"detail"}).
+app.add_exception_handler(ScannerAccessDenied, scanner_access_denied_handler)
+
 app.include_router(health.router)
 app.include_router(score.router)
 app.include_router(leaderboard.router)
+app.include_router(scanner.router)

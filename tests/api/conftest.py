@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from acpsec_api.deps import (
     get_lb_sessions,
     get_leaderboard_store,
+    get_profile_scraper,
     get_reports_dir,
     get_score_store,
 )
@@ -75,6 +76,27 @@ def leaderboard_client(tmp_path: Path):
     finally:
         for dep in (get_leaderboard_store, get_reports_dir, get_lb_sessions):
             fastapi_app.dependency_overrides.pop(dep, None)
+
+
+@pytest.fixture
+def scanner_client():
+    """Factory yielding a TestClient with the profile scraper overridden.
+
+    Usage: ``client = scanner_client(mock_fn)`` where ``mock_fn`` is a callable
+    ``(username) -> dict`` (or ``None`` to exercise the 503 path). Keeps ALL
+    external Nitter fetches out of the test suite — no live network.
+    """
+    _sentinel = object()
+
+    def _make(scraper=_sentinel):
+        if scraper is not _sentinel:
+            fastapi_app.dependency_overrides[get_profile_scraper] = lambda: scraper
+        return TestClient(fastapi_app)
+
+    try:
+        yield _make
+    finally:
+        fastapi_app.dependency_overrides.pop(get_profile_scraper, None)
 
 
 @pytest.fixture

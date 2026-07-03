@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
-api = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
+api = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "requests>=2.31", "beautifulsoup4>=4.12"]
 
 [project.scripts]
 acpsec = "acpsec.cli:main"

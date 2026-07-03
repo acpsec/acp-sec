@@ -12,7 +12,10 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from typing import Callable, Optional
+
 from acpsec_api.leaderboard_store import LeaderboardStore
+from acpsec_api.scanner_lookup import SCRAPER_AVAILABLE, scrape_x_profile
 from acpsec_api.sessions import LbSessions
 from acpsec_api.store import ScoreStore
 
@@ -46,3 +49,12 @@ def get_lb_sessions() -> LbSessions:
 def get_reports_dir() -> Path:
     """Directory holding full-scan report files. Overridden in tests."""
     return DEFAULT_REPORTS_DIR
+
+
+def get_profile_scraper() -> Optional[Callable[[str], dict]]:
+    """The X/Twitter profile scraper, or None if its deps are unavailable.
+
+    Mirrors Flask's ``_get_scanner()``: None → the endpoint returns 503.
+    Tests override this to inject a mock scraper (no live network).
+    """
+    return scrape_x_profile if SCRAPER_AVAILABLE else None
