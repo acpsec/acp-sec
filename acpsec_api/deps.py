@@ -12,7 +12,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from acpsec_api.leaderboard_store import LeaderboardStore
 from acpsec_api.scanner_lookup import SCRAPER_AVAILABLE, scrape_x_profile
@@ -22,6 +22,10 @@ from acpsec_api.store import ScoreStore
 # Default reports directory = the SAME path Flask uses (dashboard/reports),
 # so /api/report reads the pre-existing seeded report files.
 DEFAULT_REPORTS_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "reports"
+
+# Default last-scan store file — same path Flask uses (dashboard/scan_store.json).
+# Write-only (nothing reads it); replicated for side-effect parity.
+DEFAULT_SCAN_STORE = Path(__file__).resolve().parent.parent / "dashboard" / "scan_store.json"
 
 
 @lru_cache
@@ -58,3 +62,25 @@ def get_profile_scraper() -> Optional[Callable[[str], dict]]:
     Tests override this to inject a mock scraper (no live network).
     """
     return scrape_x_profile if SCRAPER_AVAILABLE else None
+
+
+def get_scanner_engine() -> Optional[Any]:
+    """The heuristic scan engine (dashboard/scanner.py), or None if unavailable.
+
+    APPROVED EXCEPTION to the no-dashboard-import rule (Task 2.5b-i): the engine
+    is 2,380 lines with external network fetches — importing it keeps a single
+    source of truth rather than duplicating it. Mirrors Flask's ``_get_scanner()``
+    (None → the endpoint returns 503). Mocked in all tests, so this import path
+    is never exercised by the suite.
+    """
+    try:
+        from dashboard import scanner
+
+        return scanner
+    except ImportError:
+        return None
+
+
+def get_scan_store_path() -> Path:
+    """Path for the best-effort last-scan write. Overridden in tests."""
+    return DEFAULT_SCAN_STORE

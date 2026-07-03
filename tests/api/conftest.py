@@ -22,6 +22,8 @@ from acpsec_api.deps import (
     get_leaderboard_store,
     get_profile_scraper,
     get_reports_dir,
+    get_scan_store_path,
+    get_scanner_engine,
     get_score_store,
 )
 from acpsec_api.leaderboard_store import LeaderboardStore
@@ -97,6 +99,41 @@ def scanner_client():
         yield _make
     finally:
         fastapi_app.dependency_overrides.pop(get_profile_scraper, None)
+
+
+@pytest.fixture
+def scan_client(tmp_path: Path):
+    """Factory for /api/scanner/scan tests with ALL write targets + engine isolated.
+
+    ``make(engine=...)`` overrides the scanner engine (a stub — no live heuristic
+    run / network), plus the leaderboard store, reports dir, and scan-store path
+    with temp-backed instances so nothing touches the real dashboard files.
+
+    Yields ``(make, lb_store, reports_dir, scan_store_path)``.
+    """
+    lb_store = LeaderboardStore(path=tmp_path / "leaderboard.json")
+    reports_dir = tmp_path / "reports"
+    scan_store_path = tmp_path / "scan_store.json"
+    _sentinel = object()
+
+    def _make(engine=_sentinel):
+        fastapi_app.dependency_overrides[get_leaderboard_store] = lambda: lb_store
+        fastapi_app.dependency_overrides[get_reports_dir] = lambda: reports_dir
+        fastapi_app.dependency_overrides[get_scan_store_path] = lambda: scan_store_path
+        if engine is not _sentinel:
+            fastapi_app.dependency_overrides[get_scanner_engine] = lambda: engine
+        return TestClient(fastapi_app)
+
+    try:
+        yield _make, lb_store, reports_dir, scan_store_path
+    finally:
+        for dep in (
+            get_leaderboard_store,
+            get_reports_dir,
+            get_scan_store_path,
+            get_scanner_engine,
+        ):
+            fastapi_app.dependency_overrides.pop(dep, None)
 
 
 @pytest.fixture
