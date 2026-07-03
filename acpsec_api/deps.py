@@ -10,8 +10,15 @@ provides the singleton ScoreStore backing the score read endpoints.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
+from acpsec_api.leaderboard_store import LeaderboardStore
+from acpsec_api.sessions import LbSessions
 from acpsec_api.store import ScoreStore
+
+# Default reports directory = the SAME path Flask uses (dashboard/reports),
+# so /api/report reads the pre-existing seeded report files.
+DEFAULT_REPORTS_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "reports"
 
 
 @lru_cache
@@ -22,3 +29,20 @@ def get_score_store() -> ScoreStore:
     across requests — matching Flask's module-level ``_current_score``.
     """
     return ScoreStore()
+
+
+@lru_cache
+def get_leaderboard_store() -> LeaderboardStore:
+    """Process-wide LeaderboardStore singleton (default disk-backed path)."""
+    return LeaderboardStore()
+
+
+@lru_cache
+def get_lb_sessions() -> LbSessions:
+    """Process-wide leaderboard session store (in-memory, matches Flask)."""
+    return LbSessions()
+
+
+def get_reports_dir() -> Path:
+    """Directory holding full-scan report files. Overridden in tests."""
+    return DEFAULT_REPORTS_DIR

@@ -17,8 +17,15 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from acpsec_api.deps import get_score_store
+from acpsec_api.deps import (
+    get_lb_sessions,
+    get_leaderboard_store,
+    get_reports_dir,
+    get_score_store,
+)
+from acpsec_api.leaderboard_store import LeaderboardStore
 from acpsec_api.main import app as fastapi_app
+from acpsec_api.sessions import LbSessions
 from acpsec_api.store import ScoreStore
 from dashboard.serve import app as flask_app
 
@@ -47,6 +54,27 @@ def isolated_client(temp_store: ScoreStore):
         yield TestClient(fastapi_app), temp_store
     finally:
         fastapi_app.dependency_overrides.pop(get_score_store, None)
+
+
+@pytest.fixture
+def leaderboard_client(tmp_path: Path):
+    """FastAPI TestClient with leaderboard store, reports dir, and sessions all
+    overridden with temp-backed, isolated instances.
+
+    Yields ``(client, lb_store, reports_dir, sessions)`` for direct seeding.
+    """
+    lb_store = LeaderboardStore(path=tmp_path / "leaderboard.json")
+    reports_dir = tmp_path / "reports"
+    sessions = LbSessions()
+
+    fastapi_app.dependency_overrides[get_leaderboard_store] = lambda: lb_store
+    fastapi_app.dependency_overrides[get_reports_dir] = lambda: reports_dir
+    fastapi_app.dependency_overrides[get_lb_sessions] = lambda: sessions
+    try:
+        yield TestClient(fastapi_app), lb_store, reports_dir, sessions
+    finally:
+        for dep in (get_leaderboard_store, get_reports_dir, get_lb_sessions):
+            fastapi_app.dependency_overrides.pop(dep, None)
 
 
 @pytest.fixture
