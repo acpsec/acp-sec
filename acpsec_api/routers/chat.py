@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from acpsec_api.deps import get_anthropic_client
+from acpsec_api.utils import is_json_request
 
 router = APIRouter()
 
@@ -56,12 +57,6 @@ SENTRYAGENT_SYSTEM = (
 )
 
 
-def _is_json_request(request: Request) -> bool:
-    """Mirror Flask/Werkzeug ``request.is_json`` (see routers/score.py)."""
-    mimetype = request.headers.get("content-type", "").split(";")[0].strip().lower()
-    return mimetype == "application/json" or mimetype.endswith("+json")
-
-
 @router.post("/api/chat/sentryagent")
 async def chat_sentryagent(
     request: Request,
@@ -72,7 +67,7 @@ async def chat_sentryagent(
     Request body: { "messages": [{"role": "user"|"assistant", "content": "..."}] }
     Returns:      { "ok": true, "reply": "..." }
     """
-    if not _is_json_request(request):
+    if not is_json_request(request):
         return JSONResponse(
             {"error": "Content-Type must be application/json"}, status_code=415
         )

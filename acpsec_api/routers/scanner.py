@@ -28,14 +28,9 @@ from acpsec_api.deps import (
 from acpsec_api.leaderboard_store import LeaderboardStore
 from acpsec_api.reports import write_report
 from acpsec_api.scanner_auth import require_scanner_access
+from acpsec_api.utils import is_json_request
 
 router = APIRouter()
-
-
-def _is_json_request(request: Request) -> bool:
-    """Mirror Flask/Werkzeug ``request.is_json`` (see routers/score.py)."""
-    mimetype = request.headers.get("content-type", "").split(";")[0].strip().lower()
-    return mimetype == "application/json" or mimetype.endswith("+json")
 
 
 # Inter-scan throttle for /bulk, matching Flask's downstream rate-limiting.
@@ -79,7 +74,7 @@ async def scanner_lookup(
     Request body: { "username": "@agentname" }
     Returns: { ok, data: { username, display_name, bio, website, avatar_url, ... } }
     """
-    if not _is_json_request(request):
+    if not is_json_request(request):
         return JSONResponse(
             {"error": "Content-Type must be application/json"}, status_code=415
         )
@@ -111,7 +106,7 @@ async def scanner_scan(
     On success, writes the last scan, upserts the leaderboard, and saves the
     full report — all best-effort (a store failure never breaks the scan).
     """
-    if not _is_json_request(request):
+    if not is_json_request(request):
         return JSONResponse(
             {"error": "Content-Type must be application/json"}, status_code=415
         )
@@ -197,7 +192,7 @@ async def scanner_bulk(
     downstream services. A single agent failing (raise or ok:False) is captured
     per-item and does not abort the batch.
     """
-    if not _is_json_request(request):
+    if not is_json_request(request):
         return JSONResponse(
             {"error": "Content-Type must be application/json"}, status_code=415
         )

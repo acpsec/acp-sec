@@ -19,14 +19,9 @@ from fastapi.responses import JSONResponse
 
 from acpsec_api.deps import get_onchain_checker
 from acpsec_api.scanner_auth import require_scanner_access
+from acpsec_api.utils import is_json_request
 
 router = APIRouter()
-
-
-def _is_json_request(request: Request) -> bool:
-    """Mirror Flask/Werkzeug ``request.is_json`` (see routers/score.py)."""
-    mimetype = request.headers.get("content-type", "").split(";")[0].strip().lower()
-    return mimetype == "application/json" or mimetype.endswith("+json")
 
 
 @router.post("/api/onchain/check")
@@ -44,7 +39,7 @@ async def onchain_check(
     None (RPC failed / malformed wallet — inconclusive). The handler does no
     wallet-format validation; the checker validates internally and never raises.
     """
-    if not _is_json_request(request):
+    if not is_json_request(request):
         return JSONResponse(
             {"error": "Content-Type must be application/json"}, status_code=415
         )

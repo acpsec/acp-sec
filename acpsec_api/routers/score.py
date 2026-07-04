@@ -21,18 +21,13 @@ from acpsec_api.deps import get_score_store
 from acpsec_api.fallback_catalogue import ASF_CONTROLS_DEFAULT, FALLBACK_CHECKS
 from acpsec_api.scoring import auto_normalise, compute_manual_score
 from acpsec_api.store import ScoreStore
+from acpsec_api.utils import is_json_request
 
 # When acpsec is present it is the single source of truth for the check list.
 if ACPSEC_AVAILABLE:
     from acpsec.catalogue import get_check_catalogue
 
 router = APIRouter()
-
-
-def _is_json_request(request: Request) -> bool:
-    """Mirror Flask/Werkzeug ``request.is_json``: mimetype is JSON."""
-    mimetype = request.headers.get("content-type", "").split(";")[0].strip().lower()
-    return mimetype == "application/json" or mimetype.endswith("+json")
 
 
 @router.get("/api/score")
@@ -49,7 +44,7 @@ async def post_score(
     request: Request, store: ScoreStore = Depends(get_score_store)
 ) -> Any:
     """Accept acpsec or native ASF JSON, normalise, cache, and persist."""
-    if not _is_json_request(request):
+    if not is_json_request(request):
         return JSONResponse(
             {"error": "Content-Type must be application/json"}, status_code=415
         )
@@ -71,7 +66,7 @@ async def post_score_manual(
     CRITICAL-severity controls with status='fail' incur an additional penalty
     (via acpsec.scorer when available, or a local fallback otherwise).
     """
-    if not _is_json_request(request):
+    if not is_json_request(request):
         return JSONResponse(
             {"error": "Content-Type must be application/json"}, status_code=415
         )
