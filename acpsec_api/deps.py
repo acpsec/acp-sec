@@ -84,3 +84,20 @@ def get_scanner_engine() -> Optional[Any]:
 def get_scan_store_path() -> Path:
     """Path for the best-effort last-scan write. Overridden in tests."""
     return DEFAULT_SCAN_STORE
+
+
+def get_onchain_checker() -> Optional[Callable[..., dict]]:
+    """The on-chain ACP registration checker, or None if acpsec.onchain is absent.
+
+    Mirrors Flask's inline ``from acpsec.onchain import check_acp_registration``
+    guarded by ImportError → the endpoint returns 503. Tests override this to
+    inject a mock checker so NO live Base RPC call is ever made by the suite.
+
+    The returned callable has the signature
+    ``check_acp_registration(wallet, *, rpc_url=None) -> dict`` and never raises.
+    """
+    try:
+        from acpsec.onchain import check_acp_registration
+    except ImportError:
+        return None
+    return check_acp_registration
