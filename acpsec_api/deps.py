@@ -9,6 +9,7 @@ provides the singleton ScoreStore backing the score read endpoints.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -101,3 +102,24 @@ def get_onchain_checker() -> Optional[Callable[..., dict]]:
     except ImportError:
         return None
     return check_acp_registration
+
+
+def get_anthropic_client() -> Optional[Any]:
+    """The Anthropic API client, or None if AI chat is unavailable.
+
+    Returns None when ANTHROPIC_API_KEY is unset OR the ``anthropic`` package is
+    not installed — mirroring Flask's two inline guards. The chat router checks
+    the env var FIRST, so a None with the key present unambiguously means the
+    import failed (which maps to Flask's distinct 503 messages).
+
+    Constructing the client does no network I/O. Tests override this to inject a
+    fake client, so NO live Claude API call is ever made by the suite.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        import anthropic
+    except ImportError:
+        return None
+    return anthropic.Anthropic(api_key=api_key)

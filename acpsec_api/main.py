@@ -12,7 +12,7 @@ from acpsec_api.scanner_auth import (
     ScannerAccessDenied,
     scanner_access_denied_handler,
 )
-from acpsec_api.routers import health, leaderboard, onchain, scanner, score
+from acpsec_api.routers import chat, health, leaderboard, onchain, scanner, score
 
 app = FastAPI(
     title="ACP-SEC API",
@@ -38,3 +38,4 @@ app.include_router(score.router)
 app.include_router(leaderboard.router)
 app.include_router(scanner.router)
 app.include_router(onchain.router)
+app.include_router(chat.router)
