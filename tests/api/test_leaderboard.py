@@ -34,13 +34,18 @@ def _parse_cookie(header: str) -> dict:
 
 
 def _assert_lb_cookie(header: str) -> None:
+    # Task 2.8 INTENTIONAL PARITY BREAK: for the split-origin deployment
+    # (frontend on Vercel, API on Railway) the lb_session cookie must be sent
+    # cross-origin, so the production default is now SameSite=None; Secure
+    # (was SameSite=Lax; not-Secure, matching Flask). Flask is unchanged; this
+    # deviation is deliberate — see test_auth_correct_parity + test_cookie_*.
     c = _parse_cookie(header)
     assert c["__name__"] == "lb_session"
     assert c["__value__"].startswith("lb_")
     assert c.get("max-age") == "604800"
     assert c.get("httponly") is True
-    assert str(c.get("samesite", "")).lower() == "lax"
-    assert "secure" not in c
+    assert str(c.get("samesite", "")).lower() == "none"
+    assert "secure" in c
     assert c.get("path") == "/"
 
 
@@ -185,6 +190,9 @@ def test_auth_no_password_open(leaderboard_client, monkeypatch) -> None:
 
 def test_auth_correct_password(leaderboard_client, monkeypatch) -> None:
     monkeypatch.setenv("LEADERBOARD_PASSWORD", "s3cret")
+    # No cookie overrides → production defaults (SameSite=None; Secure).
+    monkeypatch.delenv("ACPSEC_COOKIE_SAMESITE", raising=False)
+    monkeypatch.delenv("ACPSEC_COOKIE_SECURE", raising=False)
     client, _store, _reports, _sessions = leaderboard_client
     resp = client.post("/api/leaderboard/auth", json={"password": "s3cret"})
     assert resp.status_code == 200
@@ -210,20 +218,61 @@ def test_auth_wrong_parity(fastapi_client, flask_client, monkeypatch) -> None:
 
 
 def test_auth_correct_parity(fastapi_client, flask_client, monkeypatch) -> None:
+    # Task 2.8 INTENTIONAL PARITY BREAK: the JSON body + the stable cookie fields
+    # (name, value prefix, max-age, httponly, path) still match Flask, but the
+    # SameSite/Secure flags DIVERGE on purpose — FastAPI now ships cross-origin
+    # defaults (SameSite=None; Secure) while Flask keeps SameSite=Lax; not-Secure.
     monkeypatch.setenv("LEADERBOARD_PASSWORD", "s3cret")
+    monkeypatch.delenv("ACPSEC_COOKIE_SAMESITE", raising=False)
+    monkeypatch.delenv("ACPSEC_COOKIE_SECURE", raising=False)
     fa = fastapi_client.post("/api/leaderboard/auth", json={"password": "s3cret"})
     fl = flask_client.post("/api/leaderboard/auth", json={"password": "s3cret"})
 
     assert fa.status_code == fl.status_code == 200
     assert fa.json() == fl.get_json() == {"ok": True}
 
-    # Cookie flags must match (token values differ by design).
     fa_c = _parse_cookie(fa.headers["set-cookie"])
     fl_c = _parse_cookie(fl.headers["Set-Cookie"])
+
+    # Stable fields still match (token values differ by design).
     assert fa_c["__name__"] == fl_c["__name__"] == "lb_session"
     assert fa_c["__value__"].startswith("lb_") and fl_c["__value__"].startswith("lb_")
     assert fa_c.get("max-age") == fl_c.get("max-age") == "604800"
     assert fa_c.get("httponly") is True and fl_c.get("httponly") is True
-    assert str(fa_c.get("samesite", "")).lower() == str(fl_c.get("samesite", "")).lower() == "lax"
-    assert "secure" not in fa_c and "secure" not in fl_c
     assert fa_c.get("path") == fl_c.get("path") == "/"
+
+    # Deliberate divergence — this is the whole point of Task 2.8.
+    assert str(fa_c.get("samesite", "")).lower() == "none"
+    assert "secure" in fa_c
+    assert str(fl_c.get("samesite", "")).lower() == "lax"
+    assert "secure" not in fl_c
+
+
+# --- Cookie flag env configuration (Task 2.8) ----------------------------
+
+def test_cookie_production_flags(leaderboard_client, monkeypatch) -> None:
+    # Default (no overrides) = production: SameSite=None; Secure. Requires HTTPS
+    # in the browser, which the Railway/Vercel split deployment provides.
+    monkeypatch.setenv("LEADERBOARD_PASSWORD", "s3cret")
+    monkeypatch.delenv("ACPSEC_COOKIE_SAMESITE", raising=False)
+    monkeypatch.delenv("ACPSEC_COOKIE_SECURE", raising=False)
+    client, _store, _reports, _sessions = leaderboard_client
+    resp = client.post("/api/leaderboard/auth", json={"password": "s3cret"})
+    assert resp.status_code == 200
+    c = _parse_cookie(resp.headers["set-cookie"])
+    assert str(c.get("samesite", "")).lower() == "none"
+    assert "secure" in c
+
+
+def test_cookie_dev_flags(leaderboard_client, monkeypatch) -> None:
+    # Local-dev override: SameSite=Lax; not-Secure so the cookie works over plain
+    # http://localhost (SameSite=None would require Secure, which localhost lacks).
+    monkeypatch.setenv("LEADERBOARD_PASSWORD", "s3cret")
+    monkeypatch.setenv("ACPSEC_COOKIE_SAMESITE", "lax")
+    monkeypatch.setenv("ACPSEC_COOKIE_SECURE", "false")
+    client, _store, _reports, _sessions = leaderboard_client
+    resp = client.post("/api/leaderboard/auth", json={"password": "s3cret"})
+    assert resp.status_code == 200
+    c = _parse_cookie(resp.headers["set-cookie"])
+    assert str(c.get("samesite", "")).lower() == "lax"
+    assert "secure" not in c

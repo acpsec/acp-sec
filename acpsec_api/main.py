@@ -1,9 +1,10 @@
 """FastAPI application instance for acpsec_api.
 
-Pure scaffold: creates the app, wires CORS middleware (origins filled in
-Group 2.8), and mounts the health router stub. Does NOT yet import the
-acpsec scoring/model/catalogue/onchain modules — that happens in Group 2.
+Creates the app, wires credentialed CORS for the split-origin deployment
+(frontend on Vercel, API on Railway — Task 2.8), and mounts the routers.
 """
+
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,17 +15,43 @@ from acpsec_api.scanner_auth import (
 )
 from acpsec_api.routers import chat, health, leaderboard, onchain, scanner, score
 
+# --- CORS (Task 2.8) ------------------------------------------------------
+# Credentialed CORS (cookie auth) forbids a wildcard origin, so the allowlist is
+# explicit static entries + a regex for Vercel preview deploys. Both are
+# env-overridable so staging/prod can lock the list down without a code change.
+_DEFAULT_CORS_ORIGINS = [
+    "https://acpsec.app",
+    "https://staging.acpsec.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+# Vercel preview URLs: acpsec-web-<hash>-<scope>.vercel.app
+_DEFAULT_CORS_ORIGIN_REGEX = r"https://acpsec-web-[a-z0-9-]+\.vercel\.app"
+
+
+def _cors_origins() -> list[str]:
+    """Static allowlist — CORS_ALLOWED_ORIGINS (comma-separated) overrides."""
+    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return _DEFAULT_CORS_ORIGINS
+
+
+def _cors_origin_regex() -> str:
+    """Preview-deploy regex — CORS_ALLOWED_ORIGIN_REGEX overrides."""
+    return os.environ.get("CORS_ALLOWED_ORIGIN_REGEX", "").strip() or _DEFAULT_CORS_ORIGIN_REGEX
+
+
 app = FastAPI(
     title="ACP-SEC API",
-    description="FastAPI backend for the ACP-SEC dashboard/app (scaffold).",
+    description="FastAPI backend for the ACP-SEC dashboard/app.",
     version="0.5.0",
 )
 
-# CORS stub — allow_origins populated in Group 2.8 once the frontend origin
-# is known. Left empty for now so nothing is silently permitted.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[],
+    allow_origins=_cors_origins(),
+    allow_origin_regex=_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

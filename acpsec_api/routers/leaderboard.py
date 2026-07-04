@@ -23,7 +23,13 @@ from fastapi.responses import JSONResponse
 
 from acpsec_api.deps import get_lb_sessions, get_leaderboard_store, get_reports_dir
 from acpsec_api.leaderboard_store import LeaderboardStore
-from acpsec_api.sessions import LB_SESSION_COOKIE, LB_SESSION_MAX_AGE, LbSessions
+from acpsec_api.sessions import (
+    LB_SESSION_COOKIE,
+    LB_SESSION_MAX_AGE,
+    LbSessions,
+    cookie_samesite,
+    cookie_secure,
+)
 
 router = APIRouter()
 
@@ -93,13 +99,16 @@ async def leaderboard_auth(
 
     token = sessions.create()
     resp = JSONResponse({"ok": True})
+    # Task 2.8: cross-origin cookie flags (SameSite=None; Secure by default),
+    # env-overridable for local dev. See acpsec_api.sessions.cookie_* helpers.
     resp.set_cookie(
         LB_SESSION_COOKIE,
         token,
         max_age=LB_SESSION_MAX_AGE,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=cookie_samesite(),
+        secure=cookie_secure(),
+        path="/",
     )
     return resp
 

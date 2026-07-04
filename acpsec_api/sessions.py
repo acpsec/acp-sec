@@ -7,6 +7,7 @@ Standalone port of the in-memory session store in ``dashboard/serve.py``
 
 from __future__ import annotations
 
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,25 @@ from datetime import datetime, timedelta, timezone
 LB_SESSION_COOKIE = "lb_session"
 LB_SESSION_DAYS = 7
 LB_SESSION_MAX_AGE = LB_SESSION_DAYS * 86400  # 604800
+
+# Task 2.8 — cross-origin cookie flags (INTENTIONAL parity break from Flask).
+# The frontend (Vercel) and API (Railway) are separate origins, so the session
+# cookie must ride cross-origin requests: SameSite=None; Secure. Both are read
+# at REQUEST time (not import) so tests / local dev can flip them per-request.
+#
+# Local-dev override (plain http://localhost can't set Secure cookies):
+#   ACPSEC_COOKIE_SAMESITE=lax  ACPSEC_COOKIE_SECURE=false
+_FALSEY = {"false", "0", "no", "off", ""}
+
+
+def cookie_samesite() -> str:
+    """SameSite flag for lb_session — default 'none' (cross-origin production)."""
+    return os.environ.get("ACPSEC_COOKIE_SAMESITE", "none").strip().lower() or "none"
+
+
+def cookie_secure() -> bool:
+    """Secure flag for lb_session — default True (SameSite=None requires it)."""
+    return os.environ.get("ACPSEC_COOKIE_SECURE", "true").strip().lower() not in _FALSEY
 
 
 class LbSessions:
