@@ -5,12 +5,13 @@ Contract-identical ports from dashboard/serve.py, gated by the reusable
     - POST /api/scanner/lookup  (2.5a)  — Nitter profile scrape
     - POST /api/scanner/scan    (2.5b-i) — heuristic scan + leaderboard/report writes
 
-/api/scanner/bulk is Task 2.5b-ii — NOT here.
+    - POST /api/scanner/bulk    (2.5b-ii) — batch scan up to 10 X usernames
 """
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -35,6 +36,36 @@ def _is_json_request(request: Request) -> bool:
     """Mirror Flask/Werkzeug ``request.is_json`` (see routers/score.py)."""
     mimetype = request.headers.get("content-type", "").split(";")[0].strip().lower()
     return mimetype == "application/json" or mimetype.endswith("+json")
+
+
+# Inter-scan throttle for /bulk, matching Flask's downstream rate-limiting.
+# Exposed as a module constant so it stays visible; tests patch ``time.sleep``.
+BULK_MAX = 10
+BULK_SCAN_DELAY_SECONDS = 5
+
+# Derive a plausible website URL from an X username. For purely social-only
+# agents this hits the social-media guard in analyze_agent and triggers a
+# limited scan — which is correct. Kept verbatim from Flask's bulk handler.
+_BULK_URL_TEMPLATE = "https://twitter.com/{username}"
+
+
+def _persist_leaderboard_and_report(
+    lb_store: LeaderboardStore, reports_dir: Path, data: dict
+) -> None:
+    """Best-effort leaderboard upsert + report write for a successful scan.
+
+    Shared verbatim by /scan and /bulk. Each write is independently guarded —
+    a store failure must never break a scan (mirrors the two try blocks in the
+    Flask handlers).
+    """
+    try:
+        lb_store.upsert(data)
+    except Exception:  # noqa: BLE001 — leaderboard must never break a scan
+        pass
+    try:
+        write_report(reports_dir, data)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @router.post("/api/scanner/lookup")
@@ -136,22 +167,85 @@ async def scanner_scan(
         except Exception:  # noqa: BLE001
             pass
 
-    # Persist last scan (best-effort)
+    # Persist last scan (best-effort) — single-scan only; /bulk does not do this.
     try:
         scan_store_path.write_text(json.dumps(result["data"], indent=2, default=str))
     except OSError:
         pass
 
-    # Auto-add / update this agent on the public leaderboard (best-effort).
-    try:
-        lb_store.upsert(result["data"])
-    except Exception:  # noqa: BLE001 — leaderboard must never break a scan
-        pass
-
-    # Auto-save the full breakdown for GET /api/report/<agent_id> (best-effort).
-    try:
-        write_report(reports_dir, result["data"])
-    except Exception:  # noqa: BLE001
-        pass
+    # Auto-add to leaderboard + save the full breakdown (both best-effort).
+    _persist_leaderboard_and_report(lb_store, reports_dir, result["data"])
 
     return result
+
+
+@router.post("/api/scanner/bulk")
+async def scanner_bulk(
+    request: Request,
+    _gate: None = Depends(require_scanner_access),
+    engine: Optional[Any] = Depends(get_scanner_engine),
+    lb_store: LeaderboardStore = Depends(get_leaderboard_store),
+    reports_dir: Path = Depends(get_reports_dir),
+) -> Any:
+    """Scan multiple agents by X username, sequentially with rate limiting.
+
+    Request body: { usernames: ["aerodromefi", ...], scan_mode?: "root"|"exact" }
+    Returns { ok, count, results[] } where each entry is
+    { username, ok, data? | error? } in the same shape as /api/scanner/scan.
+
+    Rate limits: max 10 agents per request; a 5s pause between scans respects
+    downstream services. A single agent failing (raise or ok:False) is captured
+    per-item and does not abort the batch.
+    """
+    if not _is_json_request(request):
+        return JSONResponse(
+            {"error": "Content-Type must be application/json"}, status_code=415
+        )
+    payload = await request.json() or {}
+    usernames = [
+        str(u).strip().lstrip("@") for u in (payload.get("usernames") or []) if u
+    ]
+    scan_mode = (payload.get("scan_mode") or "root").strip().lower()
+    if scan_mode not in ("root", "exact"):
+        scan_mode = "root"
+
+    if not usernames:
+        return JSONResponse(
+            {"error": "'usernames' must be a non-empty list"}, status_code=422
+        )
+
+    if len(usernames) > BULK_MAX:
+        return JSONResponse(
+            {
+                "error": f"Too many agents — maximum {BULK_MAX} per request, "
+                f"got {len(usernames)}",
+            },
+            status_code=422,
+        )
+
+    if engine is None:
+        return JSONResponse({"error": "scanner module not available"}, status_code=503)
+
+    results = []
+    for i, username in enumerate(usernames):
+        if i > 0:
+            time.sleep(BULK_SCAN_DELAY_SECONDS)  # throttle between scans
+
+        url = _BULK_URL_TEMPLATE.format(username=username)
+        try:
+            scan = engine.analyze_agent(url, username, scan_mode=scan_mode)
+        except Exception as exc:  # noqa: BLE001
+            results.append({"username": username, "ok": False, "error": str(exc)})
+            continue
+
+        if scan.get("ok") and scan.get("data"):
+            scan["data"]["x_username"] = username
+            _persist_leaderboard_and_report(lb_store, reports_dir, scan["data"])
+            results.append({"username": username, "ok": True, "data": scan["data"]})
+        else:
+            results.append({
+                "username": username, "ok": False,
+                "error": scan.get("error") or "scan failed",
+            })
+
+    return {"ok": True, "count": len(results), "results": results}
