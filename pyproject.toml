@@ -35,3 +35,6 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "network: live-RPC integration test — hits public Base RPC. Opt-in only: deselected/skipped by default, run with `-m network` and B20_LIVE_RPC set.",
+]
