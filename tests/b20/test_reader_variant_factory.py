@@ -2,7 +2,6 @@
 
 from tests.b20.conftest import FakeRpc
 
-from acpsec_api.b20 import constants as C
 from acpsec_api.b20 import reader as R
 
 ASSET = "0x" + "b2" + "00" * 9 + "00" + "aa" * 9

@@ -129,10 +129,10 @@ def test_eth_block_number_none_on_failure():
 
 
 # --- User-Agent + HTTPError reachability (Cloudflare 1010 fix) --------------
-import urllib.error
-import urllib.request
+import urllib.error  # noqa: E402 — grouped with this test section (verbatim port)
+import urllib.request  # noqa: E402
 
-from acpsec_api.b20.rpc import _default_transport
+from acpsec_api.b20.rpc import _default_transport  # noqa: E402
 
 
 def test_default_user_agent_is_not_python_urllib(monkeypatch):

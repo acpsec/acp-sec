@@ -13,7 +13,7 @@ from acpsec_api.scanner_auth import (
     ScannerAccessDenied,
     scanner_access_denied_handler,
 )
-from acpsec_api.routers import chat, health, leaderboard, onchain, scanner, score
+from acpsec_api.routers import b20, chat, health, leaderboard, onchain, scanner, score
 
 # --- CORS (Task 2.8) ------------------------------------------------------
 # Credentialed CORS (cookie auth) forbids a wildcard origin, so the allowlist is
@@ -66,3 +66,4 @@ app.include_router(leaderboard.router)
 app.include_router(scanner.router)
 app.include_router(onchain.router)
 app.include_router(chat.router)
+app.include_router(b20.router)
