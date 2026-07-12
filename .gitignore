@@ -53,3 +53,7 @@ contracts/cache/
 # ── Scans — ignore ad-hoc scan output, keep verified baselines ─────────────
 scans/*.json
 !scans/baseline-*.json
+
+# ── Local smoke test artifacts (also covered by *.log above; pinned for clarity) ──
+staging-smoke.log
+smoke-*.log
