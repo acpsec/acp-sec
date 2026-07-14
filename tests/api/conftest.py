@@ -30,7 +30,6 @@ from acpsec_api.leaderboard_store import LeaderboardStore
 from acpsec_api.main import app as fastapi_app
 from acpsec_api.sessions import LbSessions
 from acpsec_api.store import ScoreStore
-from dashboard.serve import app as flask_app
 
 
 @pytest.fixture
@@ -138,8 +137,19 @@ def scan_client(tmp_path: Path):
 
 @pytest.fixture
 def flask_client():
-    """Werkzeug test client bound to the legacy Flask reference app."""
-    return flask_app.test_client()
+    """Werkzeug test client bound to the legacy Flask reference app.
+
+    Imported lazily (not at module scope) so the whole ``tests/api`` package
+    still collects on the migration venv, which has no Flask. Only tests that
+    request this fixture — the byte-for-byte parity tests — skip when the Flask
+    reference app (or Flask itself) is unavailable; every other test in the
+    package is unaffected. Where Flask is installed, behaviour is unchanged.
+    """
+    serve = pytest.importorskip(
+        "dashboard.serve",
+        reason="Flask reference app unavailable (migration venv without Flask); parity oracle skipped",
+    )
+    return serve.app.test_client()
 
 
 def assert_parity(
