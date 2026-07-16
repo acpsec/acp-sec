@@ -202,3 +202,36 @@ _Pending explicit user GO. Will record: exact stop mechanism + timestamp, the
 reproducible restart command, the full rollback recipe (restart `web` +
 Namecheap DNS revert + cert re-issue caveat), and confirmation that the
 `acpsec.app` custom-domain attachment was intentionally left in place._
+
+---
+
+## Post-delete follow-ups
+
+Deferred cleanup, all **gated on the separate later instruction to delete `web`**
+(detach `acpsec.app` + delete the service). Not scheduled here — captured so
+nothing is lost.
+
+- **Fold this audit into `main`.** This doc currently lives only on
+  `deploy/staging` (the sole audit stranded off `main` — the 9A/9B docs and
+  `session-summary-v16.md` are already on both branches, in sync). Cherry-pick it
+  onto `main` **after** `web` is deleted, when `main` is no longer a live deploy
+  target for a filter-less service. (Blocked today only because `web` tracks
+  `main` with no `watchPatterns` — see 9C-1 §-note / Phase 1.5 finding.)
+- **Remove `railway.json`** from the repo alongside the `web` service deletion —
+  it is the `web` (Flask) service config and becomes dead once `web` is gone. Its
+  missing `watchPatterns` inconsistency (vs `railway.prod.json` /
+  `railway.staging.json`) is therefore **not worth fixing in place** — it
+  disappears with the file.
+- **Remove `Procfile`** (`web: python dashboard/serve.py`) at the same time — it
+  is the other `web` start-command artifact and pairs with `railway.json`.
+- **Consider retiring the legacy Flask/dashboard stack** now superseded by
+  `api-prod` (FastAPI) + the Vercel frontend: `dashboard/serve.py`, the 10 inline
+  HTML pages, `dashboard/scanner.py`, `dashboard/auth_scanner.py`. Larger change,
+  its own PR — only the committed data (`dashboard/leaderboard.json`,
+  `dashboard/reports/*.json`) must be preserved as the source of truth already
+  served by `api-prod`.
+- **Delete the env backup** `~/sentrak/backups/acpsec-web-env-20260716.txt` once
+  `web` is gone — it holds only 13 Railway system vars (no secrets), so it can be
+  removed without redaction concerns.
+- **`web-staging`** is out of 9C scope but likely a parallel retirement candidate
+  post-cutover — flag for its own audit before any action.
