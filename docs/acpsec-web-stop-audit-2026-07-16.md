@@ -153,10 +153,41 @@ request path:
   The endpoint is broken on empty ephemeral state and holds no data to lose.
   _(This 500 also revealed an exposed Werkzeug debugger — promoted to 9C-1 §F.)_
 
-**3. Env backup — done.** `railway variables --service web --kv` →
+**3. Env backup + completeness sanity check — done.**
+`railway variables --service web --kv` →
 `~/sentrak/backups/acpsec-web-env-20260716.txt` (`chmod 600`). **13 variables,
 all Railway system vars (`RAILWAY_*`) — no custom app secrets are set on `web`.**
 Path recorded here (contents never printed).
+
+- **3a — second-method cross-check:** re-read via
+  `railway variables --service web --json` and diffed the variable **names**
+  against the backup — **identical 13-name set** (diff empty). The backup is
+  **complete**, not a `--kv` serialization artifact. Because none of the 13 are
+  application config, `web`'s Flask app sources its configuration from **in-code
+  defaults** (and, where a dotenv-style file is present, via
+  `dashboard/auth_scanner.py:154-169`, which loads keys into `os.environ` only if
+  unset) — **not from Railway env**. Consistent with there being no custom app
+  secret on `web`.
+- **3b — code cross-check:** env vars actually read by the Flask app
+  (`dashboard/serve.py`, `dashboard/auth_scanner.py`), cross-checked against the
+  backup:
+
+  | Env var | Read at | In backup? | Verdict (absent ⟹ unset ⟹ code default) |
+  |---|---|---|---|
+  | `PORT` | `serve.py:40` | no | Railway auto-injects at runtime; code default `8080`. |
+  | `ANTHROPIC_API_KEY` | `serve.py:486`; `auth_scanner.py:465,967` | no | **Unset** → chat proxy returns 503 (default `""`). |
+  | `LEADERBOARD_PASSWORD` | `serve.py:579,594` | no | **Unset** → default `""` (leaderboard auth open/empty). |
+  | `SCANNER_TOKEN` | `serve.py:717,764` | no | **Unset** → scanner endpoints run **open** (`scanner_protected=False`). |
+  | `BASE_RPC_URL` | `serve.py:636` | no | **Unset** → falls back to the public RPC default. |
+  | `FLASK_ENV` | `serve.py:1156` | no | **Unset** → `is_prod=False` → **debug on** — root cause of 9C-1 §F. |
+
+  **Verdict:** every application var the code reads is **absent from the backup
+  and therefore unset in prod**; Flask runs entirely on in-code defaults. Combined
+  with 3a (backup proven complete by two independent methods), there is **no
+  incompleteness** — the backup captured everything actually set. This corroborates
+  9C-1 §D (no unique data to preserve) and explains 9C-1 §F (unset `FLASK_ENV` ⟹
+  debugger exposed). `web` is running in a fully default/degraded config with no
+  secrets to preserve.
 
 **Baselines for post-stop verification:** `api-prod` `/api/health` →
 `{"ok":true,"service":"acp-sec-dashboard","acpsec_available":true,"scanner_protected":true}`;
