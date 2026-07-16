@@ -88,6 +88,32 @@ and is served live by `api-prod`. Nothing unique to `web` is lost by stopping it
   8080, ACTIVE). **The `acpsec.app` attachment stays in place during the grace
   period — it is the DNS-revert rollback linchpin.**
 
+### F. Incidental security finding — Werkzeug debugger exposed on `web` raw URL
+
+Surfaced while running the 9C-2 Phase 1 data-parity check.
+
+- **Observed:** `GET https://web-production-2ef7a.up.railway.app/api/leaderboard`
+  (2026-07-16) returned **HTTP 500** rendered as the **interactive Werkzeug
+  debugger UI** — full Python traceback plus the in-browser debugger console
+  markup (`TypeError: '>' not supported between instances of 'NoneType' and
+  'NoneType'`). i.e. `web` is serving with `debug=True` / the debugger middleware
+  active in production.
+- **Exposure scope:** the **raw Railway URL only**
+  (`web-production-2ef7a.up.railway.app`). Since the cutover, `acpsec.app` is on
+  Vercel (9C-1 §E), so the debugger is **not** reachable via the custom domain —
+  but the raw URL is still publicly reachable and **bot-indexed** (Phase 1 logs
+  show automated `/wp-admin`, `/.git/*`, `xmlrpc` probes already hitting it).
+- **Risk:** an exposed Werkzeug debugger is a **remote-code-execution surface** —
+  its evaluation console runs arbitrary Python in the app process. Modern Werkzeug
+  gates the console behind a PIN, but the PIN is derivable/brute-forceable from
+  information the traceback and environment can leak, so this is treated as a
+  latent RCE exposure, not merely an information leak.
+- **Mitigation:** the staged stop of `web` (Phase 2) **removes this exposure
+  entirely** — no deployment, no debugger. This is an **additional reason to
+  proceed with the stop, not a reason to delay.** (Fixing it in place —
+  `debug=False` — is moot for a service being retired; noted only so the finding
+  isn't lost if the stop is ever reverted.)
+
 ### Decision
 
 **STOP `web`, do not DELETE.** Do not touch the `acpsec.app` custom-domain
@@ -125,8 +151,7 @@ request path:
 - `web` `/api/leaderboard` (raw URL): returns **HTTP 500** — Werkzeug debugger,
   `TypeError: '>' not supported between instances of 'NoneType' and 'NoneType'`.
   The endpoint is broken on empty ephemeral state and holds no data to lose.
-  _(Side note: `web` is currently serving with the Werkzeug debugger exposed;
-  stopping it also removes that exposure.)_
+  _(This 500 also revealed an exposed Werkzeug debugger — promoted to 9C-1 §F.)_
 
 **3. Env backup — done.** `railway variables --service web --kv` →
 `~/sentrak/backups/acpsec-web-env-20260716.txt` (`chmod 600`). **13 variables,
