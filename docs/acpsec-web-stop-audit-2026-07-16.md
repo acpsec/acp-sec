@@ -198,10 +198,100 @@ web-only data). Awaiting explicit user GO before executing the stop.
 
 ### Phase 2 — execution & rollback
 
-_Pending explicit user GO. Will record: exact stop mechanism + timestamp, the
-reproducible restart command, the full rollback recipe (restart `web` +
-Namecheap DNS revert + cert re-issue caveat), and confirmation that the
-`acpsec.app` custom-domain attachment was intentionally left in place._
+**Executed:** 2026-07-16 **13:23:03 UTC** / **20:23:03 WIB**. Verification
+completed within ~5 min of the stop.
+
+#### Stop mechanism (exact, reproducible)
+
+```bash
+railway down --service web --environment production -y
+```
+
+- Removes `web`'s **most recent (active) deployment** — the CLI's scale-to-zero
+  equivalent. The **service, variables, domains, and deployment history all
+  persist**; nothing is deleted.
+- `--service web` and `--environment production` are passed **explicitly** because
+  the CLI is linked to `api-prod` — without them the command would target the
+  wrong service. `-y` skips the confirmation prompt. Command produced no stdout on
+  success.
+
+#### Deploy IDs / status — `web`
+
+| | Deploy ID | Status |
+|---|---|---|
+| **Pre-stop** | `bba131bd-f455-4912-b183-06de8479fe17` (commit `5ca798c`, created 2026-07-14T01:35:43Z) | RUNNING |
+| **Post-stop** | — none — | `no-active-deployment` |
+
+`api-prod` (`2a1bdb22-…`, RUNNING) and `web-staging` (`7b5a8fb9-…`, RUNNING) were
+**untouched** before and after.
+
+#### Post-stop verification (step 3 — all PASS)
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| a | `acpsec.app` serves Vercel | **PASS** | `HTTP 200`, `server: Vercel`, `x-vercel-cache: HIT` |
+| b | `api-prod` `/api/health` | **PASS** | `{"ok":true,"service":"acp-sec-dashboard","acpsec_available":true,"scanner_protected":true}` |
+| c | Leaderboard end-to-end | **PASS** | Browser-path CORS fetch `Origin: https://acpsec.app` → `api-prod` `/api/leaderboard`: `HTTP 200`, `access-control-allow-origin: https://acpsec.app`, **26 agents** |
+| d | `web` raw URL → no-deployment | **PASS** | `GET https://web-production-2ef7a.up.railway.app/` → `HTTP 404`, body verbatim: `{"status":"error","code":404,"message":"Application not found","request_id":"SuCq0hJ-Tj-BJnS4WUN5dQ"}` |
+| e | `acpsec.app` still attached to `web` | **PASS** | `railway domain status acpsec.app --service web` → custom, ID `4f999606-…`, port 8080, Sync ACTIVE, Verified yes, cert VALID |
+
+Browser-path note: `https://acpsec.app/api/leaderboard` returns `404` HTML — the
+Next.js frontend has **no server-side `/api` route**; it fetches the backend
+**client-side**. `api.acpsec.app` is **not configured** (no DNS), so the frontend's
+API base is the `api-prod` raw URL, reached cross-origin under CORS (check c).
+
+**The `acpsec.app` custom-domain attachment was intentionally LEFT IN PLACE** on
+`web` (linchpin of the DNS-revert rollback). Not touched.
+
+#### Rollback recipe (executable standalone, months later)
+
+Restore the pre-cutover state = `acpsec.app` served by the Flask `web` service.
+**Order matters: restart `web` first, then revert DNS.**
+
+**a. Restart `web`** (inverse of the stop):
+```bash
+railway redeploy --service web --environment production -y
+```
+Redeploys `web`'s latest deployment (`bba131bd`, commit `5ca798c`). If the
+deployment record is no longer redeployable, rebuild from source:
+```bash
+railway redeploy --service web --environment production --from-source -y
+```
+or Dashboard → project `sublime-truth` → `web` → **Deployments** → latest → **⋯ →
+Redeploy**. **Confirm `web` raw URL returns `HTTP 200` before touching DNS.**
+
+**b. Namecheap DNS revert** (`acpsec.app` root record):
+- Current (Vercel): `A  @  → 216.198.79.1`.
+- Revert to Railway — set the root (`@`) to the Railway target:
+  **`CNAME/ALIAS  @  → k8je5ty4.up.railway.app`**
+  (Namecheap: use an **ALIAS Record** with host `@` — apex `CNAME` is disallowed;
+  Namecheap's ALIAS/ANAME behaves as CNAME-at-root. Remove the Vercel `A
+  216.198.79.1` record.)
+- This is the exact, still-valid target — the domain remains attached to `web`.
+  Source of truth: `railway domain status acpsec.app --service web` → DNS record
+  `CNAME @ → k8je5ty4.up.railway.app`.
+
+**c. Cert re-issue caveat:** the Railway-managed (Let's Encrypt) cert for
+`acpsec.app` is currently **VALID**. During a prolonged Vercel-only grace period,
+Railway's ACME renewal can lapse (validation needs DNS pointing back at Railway,
+which it won't be until revert). On DNS revert Railway re-validates and may
+**re-issue the cert → expect a few-minute window** where HTTPS to `acpsec.app`
+fails or shows a cert warning before resolving cleanly. Don't detach/re-attach the
+domain to force it unless it stalls beyond ~15 min.
+
+**d. Post-rollback verification** (mirrors step 3, reverted state):
+- `acpsec.app` → `HTTP 200`, `server: railway-hikari` (Flask, **not** Vercel).
+- `acpsec.app/api/health` → `{"ok":true,...}` (Flask serves API + pages again).
+- `acpsec.app/leaderboard` → Flask leaderboard page loads.
+- `web` raw URL → `HTTP 200` (deployment running again).
+- `api-prod` `/api/health` still `ok:true` (DNS revert doesn't affect it).
+
+#### Grace-period note
+
+`web` stays **stopped-but-present** — no active deployment; service, variables,
+domains, and deployment history intact — until an **explicit later instruction to
+delete**. Deletion (detach `acpsec.app` + delete the service) is **not scheduled
+here.**
 
 ---
 
