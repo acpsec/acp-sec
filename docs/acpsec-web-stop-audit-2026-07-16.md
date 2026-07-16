@@ -98,6 +98,51 @@ instruction in a later session.
 
 ## 9C-2: Staged stop of `web` (record)
 
-_Pending explicit user GO. Phase 1 pre-stop evidence and the Phase 2 execution
-record (mechanism, timestamp, restart command, full rollback recipe) will be
-appended here._
+### Phase 1 — pre-stop evidence (read-only, 2026-07-16)
+
+**1. Inbound-traffic check (closes uncertainty b) — no real external callers.**
+Pulled `web`'s runtime log buffer via `railway logs --service web` (~22h
+available: 15 Jul 12:09 → 16 Jul 10:47; the Werkzeug buffer does not retain the
+full 48h target). All source IPs are Railway edge (`100.64.x`), so classified by
+request path:
+- **Vulnerability scanners → 404:** `/wp-admin/install.php`, `/xmlrpc.php`,
+  `/.git/HEAD`, `/.git/config`.
+- **SEO / crawlers:** `/robots.txt`, `/sitemap.xml`, systematic full-nav bursts
+  (all pages hit within <2s).
+- **Page GETs:** `/`, `/scanner`, `/leaderboard`, `/monitor`, `/security`,
+  `/terms`, `/privacy`, `/agents/sentryagent`, `/static/logo.jpg`.
+- **1×** `/api/health`.
+- **Zero** real API calls (`/api/scanner/*`, `/api/score`, `/api/onchain/check`,
+  `/api/chat/sentryagent`), **zero** ACP callbacks, no scheduled uptime-monitor
+  pattern.
+- **Decisive:** `acpsec.app` already resolves to Vercel (see 9C-1 §E), so this
+  traffic reaches `web` only via the **raw Railway URL** (bot/crawler-indexed) —
+  not real users on the domain. **No real external caller depends on `web`.**
+
+**2. Data-parity check — no web-only entries.**
+- `api-prod` `/api/leaderboard`: **26 agents**, an **identical set** to committed
+  `dashboard/leaderboard.json` (`diff` of the sorted `name` field is empty).
+- `web` `/api/leaderboard` (raw URL): returns **HTTP 500** — Werkzeug debugger,
+  `TypeError: '>' not supported between instances of 'NoneType' and 'NoneType'`.
+  The endpoint is broken on empty ephemeral state and holds no data to lose.
+  _(Side note: `web` is currently serving with the Werkzeug debugger exposed;
+  stopping it also removes that exposure.)_
+
+**3. Env backup — done.** `railway variables --service web --kv` →
+`~/sentrak/backups/acpsec-web-env-20260716.txt` (`chmod 600`). **13 variables,
+all Railway system vars (`RAILWAY_*`) — no custom app secrets are set on `web`.**
+Path recorded here (contents never printed).
+
+**Baselines for post-stop verification:** `api-prod` `/api/health` →
+`{"ok":true,"service":"acp-sec-dashboard","acpsec_available":true,"scanner_protected":true}`;
+`web` raw `/` → HTTP 200 (Flask still up).
+
+**STOP 2a outcome:** neither trigger fired (no real external callers, no
+web-only data). Awaiting explicit user GO before executing the stop.
+
+### Phase 2 — execution & rollback
+
+_Pending explicit user GO. Will record: exact stop mechanism + timestamp, the
+reproducible restart command, the full rollback recipe (restart `web` +
+Namecheap DNS revert + cert re-issue caveat), and confirmation that the
+`acpsec.app` custom-domain attachment was intentionally left in place._
