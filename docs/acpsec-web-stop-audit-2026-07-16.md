@@ -332,3 +332,40 @@ nothing is lost.
   removed without redaction concerns.
 - **`web-staging`** is out of 9C scope but likely a parallel retirement candidate
   post-cutover — flag for its own audit before any action.
+
+---
+
+## Group 9.3 — post-cutover monitoring record
+
+**Recorded:** 2026-07-17 11:48 UTC / 18:48 WIB.
+
+- **Cutover date:** `acpsec.app` DNS flipped to Vercel on **2026-07-16**, on/after
+  the api-prod CORS go-live gate (`api-prod` restart `2026-07-16T03:18:34Z`,
+  deploy `2a1bdb22`). The exact DNS-flip timestamp is not independently logged in
+  the repo; it falls between that gate (03:18 UTC) and the `web` stop (13:23 UTC).
+- **`web` stop:** `2026-07-16 13:23:03 UTC` / `20:23:03 WIB` (see Phase 2).
+
+**5xx since cutover — `api-prod` HTTP logs**
+(`railway logs --service api-prod --http --since 2026-07-13T00:00:00Z`; buffer
+retained `2026-07-16T03:20:44Z → 13:30:19Z`, i.e. bounded to the current
+deployment start — older logs are not retained, so this window starts just after
+cutover):
+
+- **5xx count: 0.** No server errors, no bursts across 29 requests.
+- Non-2xx were all expected client-side: `3×401` (`/api/scanner/lookup` auth gate),
+  `2×499` (client closed a ~90 s `/api/b20/scan` at 03:30 & 03:44 — an early
+  smoke run, not recurring), `2×400` + `1×422` (request validation). 21×200.
+
+**Today's spot checks (2026-07-17 11:48 UTC)**
+
+| Check | Result |
+|---|---|
+| `api-prod` `/api/health` | `HTTP 200` — `{"ok":true,"acpsec_available":true,"scanner_protected":true}` |
+| Leaderboard CORS (`Origin: https://acpsec.app`) | `HTTP 200`, `access-control-allow-origin: https://acpsec.app`, **26 agents** |
+| `acpsec.app` frontend | `HTTP 200`, `server: Vercel` |
+
+**Verdict: STABLE.** ~1 day post-cutover / ~22 h post-`web`-stop: zero server
+errors on api-prod, frontend and leaderboard healthy end-to-end. No action needed.
+Retention caveat: continuous 5xx history is limited by Railway's
+deployment-scoped log retention — this record reflects the retained window plus
+live spot checks, not an uninterrupted trace back to the DNS flip.
