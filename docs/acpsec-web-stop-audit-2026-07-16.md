@@ -263,13 +263,20 @@ Redeploy**. **Confirm `web` raw URL returns `HTTP 200` before touching DNS.**
 **b. Namecheap DNS revert** (`acpsec.app` root record):
 - Current (Vercel): `A  @  → 216.198.79.1`.
 - Revert to Railway — set the root (`@`) to the Railway target:
-  **`CNAME/ALIAS  @  → k8je5ty4.up.railway.app`**
-  (Namecheap: use an **ALIAS Record** with host `@` — apex `CNAME` is disallowed;
-  Namecheap's ALIAS/ANAME behaves as CNAME-at-root. Remove the Vercel `A
-  216.198.79.1` record.)
+  **`ALIAS  @  → k8je5ty4.up.railway.app`** (remove the Vercel `A 216.198.79.1`).
+- **Record type (validated assumption):** Namecheap's Advanced DNS supports an
+  **ALIAS Record at apex** (verified 2026-07-17 — the ALIAS Record type appears in
+  the Add New Record dropdown on this account). Pre-cutover, `acpsec.app` used
+  `ALIAS @ → k8je5ty4.up.railway.app`; that record was **replaced (not parked)** by
+  the current `A @ → 216.198.79.1` during cutover — so rollback **recreates** the
+  ALIAS record, it is not restored from a disabled state.
+- **Supporting evidence:** viewdns.info shows only `216.198.79.1` in the domain's
+  IP history — consistent with a non-A (ALIAS) apex before cutover, since
+  A-record-history services don't capture ALIAS/CNAME targets.
 - This is the exact, still-valid target — the domain remains attached to `web`.
   Source of truth: `railway domain status acpsec.app --service web` → DNS record
-  `CNAME @ → k8je5ty4.up.railway.app`.
+  `CNAME @ → k8je5ty4.up.railway.app` (Railway reports it as `CNAME`; at apex on
+  Namecheap this is created as an **ALIAS**).
 
 **c. Cert re-issue caveat:** the Railway-managed (Let's Encrypt) cert for
 `acpsec.app` is currently **VALID**. During a prolonged Vercel-only grace period,
