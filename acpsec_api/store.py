@@ -21,9 +21,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-# Default path = the SAME file Flask uses, so cutover reads pre-existing data.
-# store.py lives at <repo>/acpsec_api/store.py → <repo>/dashboard/score_store.json
-_DEFAULT_STORE_FILE = Path(__file__).resolve().parent.parent / "dashboard" / "score_store.json"
+# Default path: <repo>/acpsec_api/store.py → <repo>/data/score_store.json
+_DEFAULT_STORE_FILE = Path(__file__).resolve().parent.parent / "data" / "score_store.json"
 
 
 class ScoreStore:

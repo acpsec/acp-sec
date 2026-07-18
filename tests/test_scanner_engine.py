@@ -19,10 +19,10 @@ from __future__ import annotations
 import pytest
 from bs4 import BeautifulSoup
 
-# NOTE (Group 9.6): in Phase 2 this import changes `dashboard` -> `acpsec_api`.
-# The assertions do not change — that identity is the proof the move preserved
-# behaviour.
-from dashboard import scanner
+# NOTE (Group 9.6): moved from `dashboard` -> `acpsec_api` in Phase 2. The
+# assertions are unchanged from the pre-move baseline — that identity is the
+# proof the move preserved behaviour.
+from acpsec_api import scanner
 
 _SCAN_URL = "https://secureagent.example/"
 

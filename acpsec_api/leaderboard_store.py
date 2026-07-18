@@ -17,10 +17,9 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Default path = the SAME file Flask uses, so cutover reads pre-existing data.
-# leaderboard_store.py → <repo>/acpsec_api/... → <repo>/dashboard/leaderboard.json
+# Default path: <repo>/acpsec_api/leaderboard_store.py → <repo>/data/leaderboard.json
 _DEFAULT_LEADERBOARD_FILE = (
-    Path(__file__).resolve().parent.parent / "dashboard" / "leaderboard.json"
+    Path(__file__).resolve().parent.parent / "data" / "leaderboard.json"
 )
 
 # Six-band tier scheme (distinct from the 5-band score verdicts in scoring.py).

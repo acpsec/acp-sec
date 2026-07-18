@@ -119,7 +119,7 @@ def get_report(
 ) -> Any:
     """Return the full scan breakdown for a leaderboard agent (read-only).
 
-    Reports live in dashboard/reports/{agent_id}.json — written scanner-side.
+    Reports live in data/reports/{agent_id}.json — written scanner-side.
     404 with a friendly message when no report exists.
     """
     # Normalise: strip @ and lowercase, same as _leaderboard_key()

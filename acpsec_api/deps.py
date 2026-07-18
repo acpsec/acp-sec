@@ -20,13 +20,13 @@ from acpsec_api.scanner_lookup import SCRAPER_AVAILABLE, scrape_x_profile
 from acpsec_api.sessions import LbSessions
 from acpsec_api.store import ScoreStore
 
-# Default reports directory = the SAME path Flask uses (dashboard/reports),
-# so /api/report reads the pre-existing seeded report files.
-DEFAULT_REPORTS_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "reports"
+# Default reports directory (data/reports), holding the seeded report files
+# read by /api/report.
+DEFAULT_REPORTS_DIR = Path(__file__).resolve().parent.parent / "data" / "reports"
 
-# Default last-scan store file — same path Flask uses (dashboard/scan_store.json).
+# Default last-scan store file (data/scan_store.json).
 # Write-only (nothing reads it); replicated for side-effect parity.
-DEFAULT_SCAN_STORE = Path(__file__).resolve().parent.parent / "dashboard" / "scan_store.json"
+DEFAULT_SCAN_STORE = Path(__file__).resolve().parent.parent / "data" / "scan_store.json"
 
 
 @lru_cache
@@ -66,16 +66,15 @@ def get_profile_scraper() -> Optional[Callable[[str], dict]]:
 
 
 def get_scanner_engine() -> Optional[Any]:
-    """The heuristic scan engine (dashboard/scanner.py), or None if unavailable.
+    """The heuristic scan engine (``acpsec_api/scanner.py``), or None if unavailable.
 
-    APPROVED EXCEPTION to the no-dashboard-import rule (Task 2.5b-i): the engine
-    is 2,380 lines with external network fetches — importing it keeps a single
-    source of truth rather than duplicating it. Mirrors Flask's ``_get_scanner()``
-    (None → the endpoint returns 503). Mocked in all tests, so this import path
-    is never exercised by the suite.
+    The engine is ~2,400 lines with external network fetches; it lives in
+    ``acpsec_api`` (Group 9.6 relocation) as the single source of truth. Mirrors
+    the Flask ``_get_scanner()`` contract (None → the endpoint returns 503).
+    Pinned by ``tests/test_scanner_engine.py``; mocked in the router tests.
     """
     try:
-        from dashboard import scanner
+        from acpsec_api import scanner
 
         return scanner
     except ImportError:
