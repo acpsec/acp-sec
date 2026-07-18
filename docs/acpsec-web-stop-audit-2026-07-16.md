@@ -386,3 +386,58 @@ errors on api-prod, frontend and leaderboard healthy end-to-end. No action neede
 Retention caveat: continuous 5xx history is limited by Railway's
 deployment-scoped log retention — this record reflects the retained window plus
 live spot checks, not an uninterrupted trace back to the DNS flip.
+
+---
+
+## Group 9.6 — scanner.py relocation
+
+**Goal:** sever api-prod's runtime dependency on `dashboard/` so the Flask tree
+can be deleted with `web` after the grace period, without breaking api-prod.
+
+### What moved
+- **Engine:** `dashboard/scanner.py` → `acpsec_api/scanner.py` (2,380 lines,
+  framework-agnostic — stdlib + `requests` + `bs4`, zero Flask coupling).
+- **Committed data:** `dashboard/leaderboard.json` → `data/leaderboard.json`;
+  `dashboard/reports/` (25 files) → `data/reports/`.
+
+### Repointed references (the one import + four path constants)
+| Reader | Was | Now |
+|---|---|---|
+| `acpsec_api/deps.py` `get_scanner_engine()` | `from dashboard import scanner` | `from acpsec_api import scanner` |
+| `acpsec_api/deps.py` `DEFAULT_REPORTS_DIR` | `dashboard/reports` | `data/reports` |
+| `acpsec_api/deps.py` `DEFAULT_SCAN_STORE` | `dashboard/scan_store.json` | `data/scan_store.json` |
+| `acpsec_api/store.py` `_DEFAULT_STORE_FILE` | `dashboard/score_store.json` | `data/score_store.json` |
+| `acpsec_api/leaderboard_store.py` `_DEFAULT_LEADERBOARD_FILE` | `dashboard/leaderboard.json` | `data/leaderboard.json` |
+
+Config repointed too: `.gitignore` (store paths), `.railwayignore`
+(root-anchored `/reports/` so shipped `data/reports/` isn't excluded),
+`railway.prod.json` + `railway.staging.json` watchPatterns (`dashboard/*.json` →
+`data/*.json`, `dashboard/reports/**` → `data/reports/**`, dropped
+`dashboard/scanner.py` — covered by `acpsec_api/**`). Result: **zero runtime
+`dashboard/` dependency in `acpsec_api/`** (provenance docstrings kept as
+history).
+
+### Behavior-preservation proof — characterization test
+`dashboard/scanner.py` had **no direct unit test** (the `tests/api/` scanner
+tests inject a fake and pin only the router contract). So before moving anything,
+`tests/test_scanner_engine.py` was written to **pin the current behavior** of the
+two entry points api-prod calls (`analyze_agent`, `extract_token_info`) with the
+network fully stubbed — captured from live output, not aspirational. It ran green
+at the **old** location, then again — **byte-for-byte identical assertions** — at
+the **new** location. That identity is the proof the move changed nothing;
+`test_report_found_parity` (the Flask oracle, now cut off from the relocated data)
+was retired in favor of api-prod's live 200 as ground truth. Full suite: 1122
+passed.
+
+### Deploy + verification
+- **web-staging** (FastAPI staging, `deploy/staging` push): rebuilt `073a88d7`
+  SUCCESS. Smoke: `/api/health` ok; `/api/leaderboard` 26 (from
+  `data/leaderboard.json`); live `POST /api/scanner/scan` → 200; report
+  round-trip via `data/reports/` (200); seed `aixbt` served.
+- **api-prod** (main push, 2026-07-18): pre `2a1bdb22` → post **`6f17d334`**
+  SUCCESS. `web` stayed **dormant** (auto-deploy disabled; `activeDeployments`
+  empty, no new record). Smoke: `/api/health` ok; `/api/leaderboard` 26; live
+  scan → 200; report round-trip via `data/reports/` (`/api/report/prod_smoke_96`
+  → 200); seed `aixbt` → 200; `acpsec.app` 200/Vercel; CORS leaderboard from
+  `acpsec.app` origin → 200. *(Both smokes leave an ephemeral throwaway agent in
+  the respective leaderboard; clears on next restart.)*
