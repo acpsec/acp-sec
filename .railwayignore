@@ -8,4 +8,6 @@ tests/
 *.db
 *.sqlite
 .git/
-reports/
+# Root-level CLI scan output only — must NOT catch the shipped seed data in
+# data/reports/ (served by api-prod /api/report).
+/reports/

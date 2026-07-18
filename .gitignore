@@ -40,8 +40,8 @@ dist/
 
 # ── Project-local state ───────────────────────────────────────────────────
 .rtk/
-dashboard/scan_store.json
-dashboard/score_store.json
+data/scan_store.json
+data/score_store.json
 *.log
 
 # ── Contracts (Hardhat) ───────────────────────────────────────────────────
