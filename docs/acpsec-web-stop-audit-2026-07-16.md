@@ -246,28 +246,36 @@ API base is the `api-prod` raw URL, reached cross-origin under CORS (check c).
 #### Rollback recipe (executable standalone, months later)
 
 Restore the pre-cutover state = `acpsec.app` served by the Flask `web` service.
-**Order matters: restart `web` first, then revert DNS.**
+**Order matters: rebuild `web` first, then revert DNS.**
 
-**a. Restart `web`** (inverse of the stop):
-```bash
-railway redeploy --service web --environment production -y
-```
-Redeploys `web`'s pinned deployment `bba131bd` (commit `5ca798c`) — the last
-build where the Flask tree was intact. This is the **primary and preferred**
-path.
+**a. Rebuild `web` from commit `5ca798c`** (verified state as of 2026-07-18 — this
+is a **cold build, not a restart**):
 
-⚠️ **Do NOT rebuild `web` from `main` HEAD after Group 9.6.** 9.6 moved
-`dashboard/leaderboard.json` + `dashboard/reports/` → `data/` and
-`dashboard/scanner.py` → `acpsec_api/`, but the retired Flask `dashboard/serve.py`
-still reads `dashboard/leaderboard.json` / `dashboard/reports/` / `import scanner`
-— so a from-source rebuild at HEAD would deploy a **broken Flask**. The
-`--from-source` fallback is therefore retired.
-
-If the `bba131bd` record is gone, deploy `web` explicitly from **commit
-`5ca798c`** (not HEAD) — the last commit with the Flask tree intact — via
-Dashboard → project `sublime-truth` → `web` → **Deployments** → (redeploy
-`bba131bd`), or **Settings → Source** pinned to `5ca798c`. **Confirm `web` raw URL
-returns `HTTP 200` before touching DNS.**
+- ❌ **`railway redeploy` is NOT viable.** The pinned deployment `bba131bd`
+  (commit `5ca798c`) is **REMOVED** and **does not appear in the Railway
+  Deployments UI at all** — there is no Redeploy button for it.
+- ❌ The **only** remaining deployment record is the **FAILED** one from
+  2026-07-09 (`dd72e034`), which errors `service config at
+  '/railway.staging.json' not found` — a Group 8 artifact from when `web`'s
+  source branch was briefly switched to `deploy/staging`. Not redeployable.
+- ✅ **The only rollback path is a fresh build of `web` from commit `5ca798c`**
+  (the last commit with the Flask tree intact). ⚠️ **`main` HEAD will NOT work
+  after Group 9.6** — the retired Flask `dashboard/serve.py` still reads
+  `dashboard/leaderboard.json` / `dashboard/reports/` / `import scanner`, all of
+  which 9.6 moved (`→ data/`, `→ acpsec_api/`), so a HEAD build deploys a
+  **broken Flask**.
+- 🔴 **CRITICAL — re-enable auto-deploy first.** `web`'s "Auto deploys when
+  pushed to GitHub" was **DISABLED on 2026-07-18** (Settings → the branch
+  connected to `production`). Until it's re-enabled — or a **manual deploy from
+  `5ca798c`** is triggered — **nothing will deploy**, and the cause is
+  non-obvious (no error, just silence). Steps: Railway → `sublime-truth` → `web`
+  → **Settings** → branch connected to `production` → **Enable**, then trigger a
+  deploy pinned to commit `5ca798c` (not HEAD).
+- ⏱️ **Duration:** a cold NIXPACKS build ≈ **10–15 min**, plus DNS propagation
+  after the revert and a possible cert re-issue (step c). This is materially
+  slower than the "restart" originally assumed.
+- ⚠️ **This rollback path has NOT been tested.** Validate `web`'s raw URL returns
+  `HTTP 200` before touching DNS.
 
 **b. Namecheap DNS revert** (`acpsec.app` root record):
 - Current (Vercel): `A  @  → 216.198.79.1`.
