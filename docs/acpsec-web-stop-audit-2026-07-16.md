@@ -321,34 +321,43 @@ here.**
 
 ## Post-delete follow-ups
 
-Deferred cleanup, all **gated on the separate later instruction to delete `web`**
-(detach `acpsec.app` + delete the service). Not scheduled here — captured so
-nothing is lost.
+Deferred cleanup. Except where marked done, all remain **gated on the separate
+later instruction to delete `web`** (detach `acpsec.app` + delete the service).
+Not scheduled here — captured so nothing is lost.
 
-- **Fold this audit into `main`.** This doc currently lives only on
-  `deploy/staging` (the sole audit stranded off `main` — the 9A/9B docs and
-  `session-summary-v16.md` are already on both branches, in sync). Cherry-pick it
-  onto `main` **after** `web` is deleted, when `main` is no longer a live deploy
-  target for a filter-less service. (Blocked today only because `web` tracks
-  `main` with no `watchPatterns` — see 9C-1 §-note / Phase 1.5 finding.)
-- **Remove `railway.json`** from the repo alongside the `web` service deletion —
-  it is the `web` (Flask) service config and becomes dead once `web` is gone. Its
-  missing `watchPatterns` inconsistency (vs `railway.prod.json` /
-  `railway.staging.json`) is therefore **not worth fixing in place** — it
-  disappears with the file.
-- **Remove `Procfile`** (`web: python dashboard/serve.py`) at the same time — it
-  is the other `web` start-command artifact and pairs with `railway.json`.
-- **Consider retiring the legacy Flask/dashboard stack** now superseded by
-  `api-prod` (FastAPI) + the Vercel frontend: `dashboard/serve.py`, the 10 inline
-  HTML pages, `dashboard/scanner.py`, `dashboard/auth_scanner.py`. Larger change,
-  its own PR — only the committed data (`dashboard/leaderboard.json`,
-  `dashboard/reports/*.json`) must be preserved as the source of truth already
-  served by `api-prod`.
+- **✅ DONE (2026-07-18) — Fold this audit into `main`.** Brought to `main` via
+  fast-forward merge on 2026-07-18 (`origin/main == deploy/staging == f81ce04`);
+  no longer stranded on `deploy/staging`. This happened ahead of `web` deletion
+  because `web`'s auto-deploy was disabled the same day, removing the
+  filter-less-rebuild hazard that had blocked it.
+- **Remove `railway.json`** alongside the `web` service deletion — it is the
+  `web` (Flask) service config and becomes dead once `web` is gone. (Its missing
+  `watchPatterns` are moot: `web`'s auto-deploy is disabled, so `main` pushes no
+  longer rebuild it regardless.)
+- **Remove `Procfile`** (`web: python dashboard/serve.py`) at the same time — the
+  other `web` start-command artifact, pairs with `railway.json`.
+- **Retire the legacy Flask/`dashboard/` stack** — superseded by `api-prod`
+  (FastAPI) + the Vercel frontend. **After Group 9.6 this is smaller and
+  data-safe:** `dashboard/scanner.py` and the committed data
+  (`leaderboard.json`, `reports/`) have already moved out (`→ acpsec_api/`,
+  `→ data/`), so **no data must be preserved here anymore.** What remains to
+  delete in `dashboard/` is only the retired Flask app + its assets:
+  `serve.py`, `auth_scanner.py`, the 10 inline HTML pages
+  (`acp-sec-dashboard.html`, `scanner.html`, `monitor_dashboard.html`,
+  `leaderboard*.html`, `security/privacy/terms.html`, `agents/…`), the static
+  assets (`static/logo.jpg`, `robots.txt`, `sitemap.xml`,
+  `.well-known/security.txt`), `requirements.txt`, and the `mock_*.py` helpers.
+  `dashboard/serve.py:254` (`import scanner`) is already broken post-9.6 — dead
+  code confirming nothing live depends on it.
 - **Delete the env backup** `~/sentrak/backups/acpsec-web-env-20260716.txt` once
-  `web` is gone — it holds only 13 Railway system vars (no secrets), so it can be
-  removed without redaction concerns.
+  `web` is gone — it holds only 13 Railway system vars (no secrets), removable
+  without redaction concerns.
 - **`web-staging`** is out of 9C scope but likely a parallel retirement candidate
   post-cutover — flag for its own audit before any action.
+- **`web` auto-deploy is DISABLED (2026-07-18).** If `web` is ever **deleted**,
+  this setting disappears with the service (nothing to clean up). If `web` is
+  ever **revived** (rollback — see Phase 2 §a), the setting must be
+  **re-enabled first**, or the deploy silently does nothing.
 
 ---
 
