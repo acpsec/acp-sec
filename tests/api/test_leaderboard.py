@@ -16,8 +16,6 @@ import json
 
 from tests.api.conftest import assert_parity
 
-_REAL_AGENT = "aixbt"  # exists in dashboard/reports/aixbt.json
-
 
 def _parse_cookie(header: str) -> dict:
     """Parse a Set-Cookie header into {name, value, <lowercased attrs>}."""
@@ -169,11 +167,11 @@ def test_report_invalid_id(leaderboard_client) -> None:
     assert resp.json() == {"ok": False, "error": "invalid agent id"}
 
 
-def test_report_found_parity(fastapi_client, flask_client) -> None:
-    # Both read the real dashboard/reports/aixbt.json → identical.
-    assert_parity(fastapi_client, flask_client, f"/api/report/{_REAL_AGENT}", "GET")
-
-
+# test_report_found_parity retired in Group 9.6: the move relocated the seed
+# reports out of the Flask tree (dashboard/reports/ -> data/reports/), so the
+# retired Flask oracle can no longer read them. api-prod's live 200 on
+# /api/report/<id> is the ground truth; the not-found parity below still holds
+# (both apps 404 on a missing id).
 def test_report_not_found_parity(fastapi_client, flask_client) -> None:
     assert_parity(fastapi_client, flask_client, "/api/report/nonexistent_xyz", "GET")
 
