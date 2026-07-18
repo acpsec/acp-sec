@@ -252,13 +252,22 @@ Restore the pre-cutover state = `acpsec.app` served by the Flask `web` service.
 ```bash
 railway redeploy --service web --environment production -y
 ```
-Redeploys `web`'s latest deployment (`bba131bd`, commit `5ca798c`). If the
-deployment record is no longer redeployable, rebuild from source:
-```bash
-railway redeploy --service web --environment production --from-source -y
-```
-or Dashboard → project `sublime-truth` → `web` → **Deployments** → latest → **⋯ →
-Redeploy**. **Confirm `web` raw URL returns `HTTP 200` before touching DNS.**
+Redeploys `web`'s pinned deployment `bba131bd` (commit `5ca798c`) — the last
+build where the Flask tree was intact. This is the **primary and preferred**
+path.
+
+⚠️ **Do NOT rebuild `web` from `main` HEAD after Group 9.6.** 9.6 moved
+`dashboard/leaderboard.json` + `dashboard/reports/` → `data/` and
+`dashboard/scanner.py` → `acpsec_api/`, but the retired Flask `dashboard/serve.py`
+still reads `dashboard/leaderboard.json` / `dashboard/reports/` / `import scanner`
+— so a from-source rebuild at HEAD would deploy a **broken Flask**. The
+`--from-source` fallback is therefore retired.
+
+If the `bba131bd` record is gone, deploy `web` explicitly from **commit
+`5ca798c`** (not HEAD) — the last commit with the Flask tree intact — via
+Dashboard → project `sublime-truth` → `web` → **Deployments** → (redeploy
+`bba131bd`), or **Settings → Source** pinned to `5ca798c`. **Confirm `web` raw URL
+returns `HTTP 200` before touching DNS.**
 
 **b. Namecheap DNS revert** (`acpsec.app` root record):
 - Current (Vercel): `A  @  → 216.198.79.1`.
