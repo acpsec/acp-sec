@@ -151,6 +151,51 @@ class InjectionSuiteResult(BaseModel):
         return round(self.injected_count / self.total_tests * 100, 1)
 
 
+class SkillFile(BaseModel):
+    """One file inside a skill folder, other than the SKILL.md manifest."""
+    name: str                    # path relative to the skill root
+    is_code: bool                # shell/python/js/ts (by extension or exec bit)
+    referenced: bool             # mentioned by name in the SKILL.md body
+    size: int                    # bytes
+
+
+class SkillManifest(BaseModel):
+    """Structured view of a skill folder: SKILL.md frontmatter + body + files."""
+    name: str
+    description: str
+    body: str                    # markdown after the frontmatter block
+    path: str                    # skill root directory
+    skill_md_path: str           # path to the SKILL.md file itself
+    files: list[SkillFile] = Field(default_factory=list)
+    frontmatter_present: bool = True
+    frontmatter_error: str | None = None
+    body_start_line: int = 1     # 1-based line in SKILL.md where the body begins
+    raw: str = ""                # full SKILL.md text
+
+
+class SkillScanResult(BaseModel):
+    """Result of a static pre-install scan of a skill folder.
+
+    ``findings`` is grouped by layer — keys ``manifest`` / ``instruction`` /
+    ``code`` — and defines the stable ``--json`` schema.  Each finding is a
+    :class:`CheckResult` whose ``check_id`` is the ``SKILL-*`` rule id and whose
+    ``evidence`` carries ``file:line`` locations.
+    """
+    skill_name: str
+    skill_path: str
+    timestamp: str
+    verdict: str                 # PASS | WARN | FAIL
+    score: float
+    max_score: float
+    findings: dict[str, list[CheckResult]] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def all_findings(self) -> list[CheckResult]:
+        """Flatten findings across all layers."""
+        return [f for layer in self.findings.values() for f in layer]
+
+
 class X402FinalityConfig(BaseModel):
     """Finality posture for the agent's primary settlement network."""
     network: str = "base"
