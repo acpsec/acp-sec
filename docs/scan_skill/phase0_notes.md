@@ -143,3 +143,25 @@ runtime budget the Definition-of-Done will be checked against.
    YAML frontmatter — a genuinely new parse target, added alongside (not
    replacing) `load_config`.
 4. **`checks/hook.py`** naming collision — not reusable for skill autorun hooks.
+
+## Approved amendments (post-Phase-0 review)
+
+1. **Scoring — leaf primitives only.** Reuse `Severity`, `CheckStatus`,
+   `CheckResult`, `make_check`. Do **not** build `DimensionResult` /
+   `AssessmentResult`, do **not** add a `DIMENSION_WEIGHTS` entry (the max-score
+   contract + agent-specific penalties in `build_assessment` don't apply to
+   skills). Emit a new **`SkillScanResult`** model grouped by layer
+   (manifest / instruction / code); that model defines the stable `--json`
+   schema.
+2. **Injection taxonomy is a seed, not the rule set.** Categories A–F seed only
+   the override / extraction rules. Secrecy directives, scope escalation, and
+   hidden/encoded content have no payload analogue — written directly from the
+   Phase 3 list.
+3. **10th fixture `benign_security_doc/`** — a skill that legitimately documents
+   injection patterns (attack phrasings inside fenced code blocks / block
+   quotes). Expected **PASS**. Instruction-layer rules must be **quote/fence-
+   aware**: a documented example is not a directive.
+4. **Autorun rule ids `SKILL-AUTORUN-*`** (not `SKILL-HOOK-*`) to avoid
+   collision with the ERC-8183 HOOK dimension.
+5. **Phase 7:** verify the actual latest session-summary version (don't assume
+   v17) and report what the `9.x` series on `main` refers to before writing.
