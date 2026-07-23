@@ -5,7 +5,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from click.testing import CliRunner
+
 from acpsec.checks.skill_code import scan_code
+from acpsec.cli import main
 from acpsec.config_loader import load_skill_manifest
 from acpsec.injection.skill_patterns import scan_instructions
 from acpsec.skill_manifest import scan_manifest
@@ -26,6 +29,18 @@ def test_scan_skill_never_executes_bundled_code(tmp_path):
     scan_skill(dst)
 
     assert _sentinels(dst) == [], "scan_skill executed bundled skill code"
+
+
+def test_cli_scan_skill_never_executes_bundled_code(tmp_path):
+    # The entry point users actually invoke — human and --json paths.
+    dst = tmp_path / "never_executed"
+    shutil.copytree(FIXTURES / "never_executed", dst)
+
+    runner = CliRunner()
+    runner.invoke(main, ["scan-skill", str(dst)])
+    runner.invoke(main, ["scan-skill", str(dst), "--json"])
+
+    assert _sentinels(dst) == [], "the scan-skill CLI executed bundled skill code"
 
 
 def test_individual_layers_never_execute_bundled_code(tmp_path):
