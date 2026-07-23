@@ -72,16 +72,21 @@ def test_get_score_empty_parity_with_flask(fastapi_client, flask_client) -> None
 
 # --- GET /api/controls (stateless → full parity) --------------------------
 
-def test_controls_shape(fastapi_client) -> None:
+def test_controls_full_body(fastapi_client) -> None:
+    # Golden: /api/controls returns the acpsec catalogue + ASF defaults verbatim.
+    # Frozen against the source of truth (not a brittle literal) while the Flask
+    # parity test (test_controls_parity_with_flask) still passed — see PR A1.
+    from acpsec.catalogue import get_check_catalogue
+    from acpsec_api.fallback_catalogue import ASF_CONTROLS_DEFAULT
+
     resp = fastapi_client.get("/api/controls")
     assert resp.status_code == 200
-
-    body = resp.json()
-    assert set(body) == {"source", "acpsec_available", "checks", "asf_controls"}
-    assert isinstance(body["source"], str)
-    assert isinstance(body["acpsec_available"], bool)
-    assert isinstance(body["checks"], list) and body["checks"]
-    assert isinstance(body["asf_controls"], list) and body["asf_controls"]
+    assert resp.json() == {
+        "source": "acpsec",
+        "acpsec_available": True,
+        "checks": get_check_catalogue(),
+        "asf_controls": ASF_CONTROLS_DEFAULT,
+    }
 
 
 def test_controls_parity_with_flask(fastapi_client, flask_client) -> None:

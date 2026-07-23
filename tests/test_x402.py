@@ -19,10 +19,11 @@ from pathlib import Path
 
 import pytest
 
-# dashboard/ is a sibling of acpsec/, not a package — add it to sys.path.
+# tests/mocks/ holds the stdlib http.server test doubles (relocated out of the
+# retiring Flask dashboard/); it is not a package, so add it to sys.path.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
-sys.path.insert(0, str(_REPO_ROOT / "dashboard"))
+sys.path.insert(0, str(_REPO_ROOT / "tests" / "mocks"))
 
 from acpsec import x402_spec
 from acpsec.checks.x402 import run_x402_checks
