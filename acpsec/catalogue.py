@@ -323,11 +323,13 @@ CHECKS: list[dict] = [
 # agent dimension math in get_dimension_catalogue must stay untouched).
 # `dimension` here is the scan layer (manifest / instruction / code).
 #
-# Where a rule's severity varies with context (e.g. SKILL-CODE-NET depends on
-# the destination), the entry lists its representative/worst-case severity and
-# the description states the range.  These entries mirror the rule ids in
-# acpsec/skill_manifest.py, acpsec/injection/skill_patterns.py, and
-# acpsec/checks/skill_code.py — kept in sync by test_skill_catalogue.py.
+# `severity` is the representative/worst-case value used for display.  Rules
+# whose severity varies with context declare the full set in `severities`
+# (SKILL-CODE-NET, SKILL-CODE-SENSPATH-CFG); fixed-severity rules omit it and
+# get `severities = [severity]` from get_skill_check_catalogue().  These entries
+# mirror the rule ids AND severities in acpsec/skill_manifest.py,
+# acpsec/injection/skill_patterns.py, and acpsec/checks/skill_code.py — kept in
+# sync (both directions) by test_skill_catalogue.py.
 
 _MANIFEST = "Skill Manifest Layer"
 _INSTRUCTION = "Skill Instruction Layer"
@@ -395,6 +397,7 @@ SKILL_CHECKS: list[dict] = [
         "id": "SKILL-CODE-NET", "name": "Network egress",
         "dimension": "SKILL-CODE", "dimension_name": _CODE,
         "severity": "HIGH",
+        "severities": ["LOW", "MEDIUM", "HIGH"],
         "description": "Bundled code makes network calls. Severity ranges LOW (destination declared in SKILL.md) → MEDIUM (undeclared) → HIGH (known exfil sink: Discord/Telegram/pastebin-alikes).",
     },
     {
@@ -407,6 +410,7 @@ SKILL_CHECKS: list[dict] = [
         "id": "SKILL-CODE-SENSPATH-CFG", "name": "Reads ambiguous config file",
         "dimension": "SKILL-CODE", "dimension_name": _CODE,
         "severity": "MEDIUM",
+        "severities": ["MEDIUM", "HIGH"],
         "description": "Tier B sensitive-path read: bare .env, ~/.ssh/config, ~/.aws/config. MEDIUM alone; escalates to HIGH when a network sink co-occurs in the same file.",
     },
     {
@@ -468,10 +472,23 @@ def get_skill_check_catalogue() -> list[dict]:
     """Return the scan-skill (F1) rule catalogue as a list of dicts.
 
     Each dict has keys: id, name, dimension (scan layer), dimension_name,
-    severity, description. Skill rules are deduction-based findings, so unlike
-    the agent CHECKS they carry no fixed max_score. No live agent required.
+    severity, severities, description. Skill rules are deduction-based findings,
+    so unlike the agent CHECKS they carry no fixed max_score. No live agent
+    required.
+
+    ``severity`` is the representative/worst-case value used for display;
+    ``severities`` is the full set a rule may emit. Rules with a single fixed
+    severity omit the field in the source table and have it defaulted to
+    ``[severity]`` here — only the two context-dependent rules (SKILL-CODE-NET,
+    SKILL-CODE-SENSPATH-CFG) declare it explicitly. test_skill_catalogue.py
+    asserts this set matches what the scanners actually emit, in both directions.
     """
-    return list(SKILL_CHECKS)
+    out: list[dict] = []
+    for c in SKILL_CHECKS:
+        entry = dict(c)
+        entry.setdefault("severities", [entry["severity"]])
+        out.append(entry)
+    return out
 
 
 def get_dimension_catalogue() -> list[dict]:
