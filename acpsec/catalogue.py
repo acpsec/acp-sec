@@ -314,6 +314,146 @@ CHECKS: list[dict] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Skill-scan catalogue (Feature F1 — `acpsec scan-skill`)
+# ---------------------------------------------------------------------------
+# Static metadata for the SKILL-* rules emitted by the pre-install skill
+# scanner.  Kept SEPARATE from CHECKS above: skill rules are deduction-based
+# *findings*, not budgeted checks, so they carry no fixed `max_score` (the
+# agent dimension math in get_dimension_catalogue must stay untouched).
+# `dimension` here is the scan layer (manifest / instruction / code).
+#
+# Where a rule's severity varies with context (e.g. SKILL-CODE-NET depends on
+# the destination), the entry lists its representative/worst-case severity and
+# the description states the range.  These entries mirror the rule ids in
+# acpsec/skill_manifest.py, acpsec/injection/skill_patterns.py, and
+# acpsec/checks/skill_code.py — kept in sync by test_skill_catalogue.py.
+
+_MANIFEST = "Skill Manifest Layer"
+_INSTRUCTION = "Skill Instruction Layer"
+_CODE = "Skill Code Layer"
+
+SKILL_CHECKS: list[dict] = [
+    # -- Manifest layer ------------------------------------------------
+    {
+        "id": "SKILL-MANIFEST-01", "name": "Missing or malformed frontmatter",
+        "dimension": "SKILL-MANIFEST", "dimension_name": _MANIFEST,
+        "severity": "MEDIUM",
+        "description": "SKILL.md has no valid YAML frontmatter block (or it is malformed), so the skill cannot declare a verifiable name/description. Reported as a finding, never a crash.",
+    },
+    {
+        "id": "SKILL-MANIFEST-02", "name": "Executable not referenced in SKILL.md",
+        "dimension": "SKILL-MANIFEST", "dimension_name": _MANIFEST,
+        "severity": "MEDIUM",
+        "description": "A bundled shell/Python/JS/TS file is present but never mentioned in the skill body — a common way to smuggle a payload past a reviewer who only reads the manifest.",
+    },
+    # -- Instruction layer ---------------------------------------------
+    {
+        "id": "SKILL-INSTR-EXFIL", "name": "Credential-exfiltration directive",
+        "dimension": "SKILL-INSTRUCTION", "dimension_name": _INSTRUCTION,
+        "severity": "CRITICAL",
+        "description": "The instructions tell the agent to read secrets/credentials and place their contents in its output (sensitive reference and output directive within a two-line window).",
+    },
+    {
+        "id": "SKILL-INSTR-OVERRIDE", "name": "Authority-override phrasing",
+        "dimension": "SKILL-INSTRUCTION", "dimension_name": _INSTRUCTION,
+        "severity": "HIGH",
+        "description": "The instructions attempt to override the agent's guidelines — 'ignore previous instructions', fake-system framing, or 'this overrides your rules'.",
+    },
+    {
+        "id": "SKILL-INSTR-SECRECY", "name": "Secrecy directive",
+        "dimension": "SKILL-INSTRUCTION", "dimension_name": _INSTRUCTION,
+        "severity": "HIGH",
+        "description": "The instructions tell the agent to hide its actions or content from the user ('do not tell the user', 'keep this secret', 'secretly').",
+    },
+    {
+        "id": "SKILL-INSTR-SCOPE", "name": "Scope-escalation directive",
+        "dimension": "SKILL-INSTRUCTION", "dimension_name": _INSTRUCTION,
+        "severity": "HIGH",
+        "description": "The instructions direct the agent to access files or paths beyond the skill's stated purpose (sensitive-path access without an in-instruction exfil sink).",
+    },
+    {
+        "id": "SKILL-INSTR-FETCHEXEC", "name": "Remote fetch-and-execute directive",
+        "dimension": "SKILL-INSTRUCTION", "dimension_name": _INSTRUCTION,
+        "severity": "HIGH",
+        "description": "The instructions tell the agent to download remote content and execute it (curl-pipe-to-shell or download-then-run phrasing).",
+    },
+    {
+        "id": "SKILL-INSTR-HIDDEN", "name": "Hidden or encoded content",
+        "dimension": "SKILL-INSTRUCTION", "dimension_name": _INSTRUCTION,
+        "severity": "HIGH",
+        "description": "The body contains content hidden from a human reviewer but live to the agent: HTML comments, zero-width characters, or base64 blobs.",
+    },
+    # -- Code layer ----------------------------------------------------
+    {
+        "id": "SKILL-CODE-OBFUS", "name": "Obfuscated / packed code",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code uses eval/exec over decoded or assembled strings, character-code assembly, or long opaque base64/hex blobs — hallmarks of a hidden payload.",
+    },
+    {
+        "id": "SKILL-CODE-NET", "name": "Network egress",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code makes network calls. Severity ranges LOW (destination declared in SKILL.md) → MEDIUM (undeclared) → HIGH (known exfil sink: Discord/Telegram/pastebin-alikes).",
+    },
+    {
+        "id": "SKILL-CODE-SENSPATH-KEY", "name": "Reads private-key / credential material",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Tier A sensitive-path read: private keys (id_rsa), ~/.aws/credentials, gcloud creds, keychain, browser/wallet keystores — no legitimate purpose in a third-party skill.",
+    },
+    {
+        "id": "SKILL-CODE-SENSPATH-CFG", "name": "Reads ambiguous config file",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "MEDIUM",
+        "description": "Tier B sensitive-path read: bare .env, ~/.ssh/config, ~/.aws/config. MEDIUM alone; escalates to HIGH when a network sink co-occurs in the same file.",
+    },
+    {
+        "id": "SKILL-CODE-ENVEXFIL", "name": "Environment dump sent to network",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "CRITICAL",
+        "description": "Bundled code dumps the process environment and sends it to a network sink in the same file — direct credential exfiltration.",
+    },
+    {
+        "id": "SKILL-CODE-DESTRUCT", "name": "Destructive command",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code runs a destructive command targeting paths outside the skill directory (rm -rf on / ~ $HOME, dd, mkfs).",
+    },
+    {
+        "id": "SKILL-AUTORUN-CRON", "name": "Cron persistence",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code installs a crontab entry so it runs automatically after install — background persistence a skill should never establish.",
+    },
+    {
+        "id": "SKILL-AUTORUN-LAUNCHCTL", "name": "launchctl / LaunchAgents persistence",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code registers a macOS LaunchAgent/LaunchDaemon (launchctl load) for automatic execution across logins/reboots.",
+    },
+    {
+        "id": "SKILL-AUTORUN-SYSTEMD", "name": "systemd persistence",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code enables/installs a systemd unit for automatic execution — Linux background persistence.",
+    },
+    {
+        "id": "SKILL-AUTORUN-RCFILE", "name": "Shell rc-file modification",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code appends to a shell rc file (.bashrc/.zshrc/.profile) so its code runs on every new shell session.",
+    },
+    {
+        "id": "SKILL-AUTORUN-CHMODEXEC", "name": "chmod +x for execution",
+        "dimension": "SKILL-CODE", "dimension_name": _CODE,
+        "severity": "HIGH",
+        "description": "Bundled code makes a file executable (chmod +x), typically a precursor to running a dropped or fetched payload.",
+    },
+]
+
+
 def get_check_catalogue() -> list[dict]:
     """Return the full ACP-SEC check catalogue as a list of dicts.
 
@@ -322,6 +462,16 @@ def get_check_catalogue() -> list[dict]:
     purely static metadata.
     """
     return list(CHECKS)
+
+
+def get_skill_check_catalogue() -> list[dict]:
+    """Return the scan-skill (F1) rule catalogue as a list of dicts.
+
+    Each dict has keys: id, name, dimension (scan layer), dimension_name,
+    severity, description. Skill rules are deduction-based findings, so unlike
+    the agent CHECKS they carry no fixed max_score. No live agent required.
+    """
+    return list(SKILL_CHECKS)
 
 
 def get_dimension_catalogue() -> list[dict]:

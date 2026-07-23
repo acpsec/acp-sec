@@ -17,10 +17,17 @@ from .models import (
     MCPAuthConfig,
     MCPConfig,
     PluginConfig,
+    SkillFile,
+    SkillManifest,
     X402AssetConfig,
     X402Config,
     X402FinalityConfig,
 )
+
+# Extensions that make a bundled file "code" for scan-skill purposes.
+_CODE_EXTENSIONS = {
+    ".sh", ".bash", ".zsh", ".py", ".js", ".ts", ".mjs", ".cjs",
+}
 
 
 _ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
@@ -87,6 +94,100 @@ def load_config(path: str | Path) -> AgentConfig:
     }
 
     return AgentConfig(**flat)
+
+
+def _split_frontmatter(text: str) -> tuple[dict | None, str | None, str, int]:
+    """Split a SKILL.md into (frontmatter dict, error, body, body_start_line).
+
+    A missing or malformed frontmatter block is reported via the returned
+    error string rather than raising — it is a *finding*, not a crash.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None, "no frontmatter block", text, 1
+
+    # Find the closing fence.
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            fm_text = "\n".join(lines[1:i])
+            body = "\n".join(lines[i + 1:])
+            body_start = i + 2  # 1-based line of first body line
+            try:
+                data = yaml.safe_load(fm_text)
+                if not isinstance(data, dict):
+                    return None, "frontmatter is not a mapping", body, body_start
+                return data, None, body, body_start
+            except yaml.YAMLError as e:
+                return None, f"malformed frontmatter: {e}", body, body_start
+
+    return None, "unterminated frontmatter block", text, 1
+
+
+def load_skill_manifest(path: str | Path) -> SkillManifest:
+    """Parse a skill folder (or its SKILL.md) into a :class:`SkillManifest`.
+
+    ``path`` may be the skill directory (containing ``SKILL.md``) or the
+    ``SKILL.md`` file itself.  Never executes anything in the folder.
+    """
+    p = Path(path)
+    if p.is_dir():
+        skill_root = p
+        skill_md = p / "SKILL.md"
+    else:
+        skill_md = p
+        skill_root = p.parent
+
+    raw = skill_md.read_text(encoding="utf-8", errors="replace") if skill_md.exists() else ""
+    fm, fm_error, body, body_start = _split_frontmatter(raw)
+
+    name = ""
+    description = ""
+    if fm is not None:
+        name = str(fm.get("name", "") or "")
+        description = str(fm.get("description", "") or "")
+    if not name:
+        name = skill_root.name
+
+    files = _inventory_files(skill_root, skill_md, body)
+
+    return SkillManifest(
+        name=name,
+        description=description,
+        body=body,
+        path=str(skill_root),
+        skill_md_path=str(skill_md),
+        files=files,
+        frontmatter_present=fm is not None,
+        frontmatter_error=fm_error,
+        body_start_line=body_start,
+        raw=raw,
+    )
+
+
+def _inventory_files(skill_root: Path, skill_md: Path, body: str) -> list[SkillFile]:
+    """List every file under the skill root except SKILL.md itself."""
+    files: list[SkillFile] = []
+    for entry in sorted(skill_root.rglob("*")):
+        if not entry.is_file() or entry == skill_md:
+            continue
+        rel = entry.relative_to(skill_root).as_posix()
+        is_code = entry.suffix.lower() in _CODE_EXTENSIONS or _is_executable(entry)
+        referenced = entry.name in body or rel in body
+        try:
+            size = entry.stat().st_size
+        except OSError:
+            size = 0
+        files.append(
+            SkillFile(name=rel, is_code=is_code, referenced=referenced, size=size)
+        )
+    return files
+
+
+def _is_executable(entry: Path) -> bool:
+    try:
+        return bool(entry.stat().st_mode & 0o111)
+    except OSError:
+        return False
 
 
 def _build_x402_config(raw: dict) -> X402Config:

@@ -1,0 +1,16 @@
+{
+  "skill_name": "deploy",
+  "skill_path": "/Users/fadhlan/.claude/plugins/cache/claude-plugins-official/vercel/1.0.0/skills/deploy",
+  "timestamp": "2026-07-23T11:23:42.367754+00:00",
+  "verdict": "PASS",
+  "score": 100.0,
+  "max_score": 100.0,
+  "findings": {
+    "manifest": [],
+    "instruction": [],
+    "code": []
+  },
+  "metadata": {
+    "skill_md_path": "/Users/fadhlan/.claude/plugins/cache/claude-plugins-official/vercel/1.0.0/skills/deploy/SKILL.md"
+  }
+}
