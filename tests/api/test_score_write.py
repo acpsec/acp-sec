@@ -127,10 +127,13 @@ def test_post_manual(isolated_client) -> None:
     data = body["data"]
     assert data["source"] == "manual"
     assert data["agent_name"] == "Manual Agent"
-    assert isinstance(data["acpsec_scoring"], bool)
-    assert isinstance(data["band"], str) and data["band"]
-    assert isinstance(data["verdict"], str) and data["verdict"]
     assert data["controls"] == _MANUAL_PAYLOAD["controls"]
+    # Golden band/verdict frozen from the acpsec ScoringEngine while the Flask
+    # parity test (test_post_parity_with_flask) still passed — see PR A1.
+    # _MANUAL_PAYLOAD is a perfect score (AUTH-01 3/3 + CTX-01 5/5) → EXEMPLARY.
+    assert data["acpsec_scoring"] is True
+    assert data["band"] == "EXEMPLARY"
+    assert data["verdict"] == "Best-in-class — sets the bar for the industry"
 
 
 def test_post_manual_invalid(isolated_client) -> None:

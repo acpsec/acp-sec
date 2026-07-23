@@ -736,10 +736,11 @@ def _run_x402_live_probes(*, cfg, llm_call, llm_cost, verbose: bool):
     import urllib.error
     import urllib.request
 
-    # Make `dashboard/` importable (it's a sibling of acpsec, not a package).
-    _dash_dir = str(Path(__file__).resolve().parent)
-    if _dash_dir not in sys.path:
-        sys.path.insert(0, _dash_dir)
+    # mock_facilitator lives alongside this module in tests/mocks/ (not a
+    # package), so make this directory importable.
+    _mocks_dir = str(Path(__file__).resolve().parent)
+    if _mocks_dir not in sys.path:
+        sys.path.insert(0, _mocks_dir)
     from mock_facilitator import (         # type: ignore
         MockFacilitator, build_payment_payload, build_payment_requirements,
     )
