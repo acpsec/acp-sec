@@ -16,6 +16,7 @@ import concurrent.futures
 import re
 import time
 import urllib.parse
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urljoin
