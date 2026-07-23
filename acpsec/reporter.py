@@ -16,6 +16,7 @@ from .models import (
     DimensionResult,
     InjectionSuiteResult,
     Severity,
+    SkillScanResult,
 )
 
 console = Console()
@@ -142,6 +143,55 @@ def print_injection_report(result: InjectionSuiteResult) -> None:
     console.print(table)
 
 
-def save_json(data: AssessmentResult | InjectionSuiteResult, output: str | Path) -> None:
+SKILL_VERDICT_COLORS = {
+    "PASS": "bold green",
+    "WARN": "yellow",
+    "FAIL": "bold red",
+}
+
+_LAYER_TITLES = {
+    "manifest": "Manifest",
+    "instruction": "Instruction",
+    "code": "Code",
+}
+
+
+def print_skill_scan(result: SkillScanResult) -> None:
+    """Human-readable scan-skill report: verdict, score, findings by layer."""
+    color = SKILL_VERDICT_COLORS.get(result.verdict, "white")
+
+    console.print()
+    console.print(
+        Panel(
+            f"[bold]{result.skill_name}[/bold]\n"
+            f"Verdict: [{color}]{result.verdict}[/{color}]   "
+            f"Score: [{color}]{result.score:.1f} / {result.max_score:.0f}[/{color}]\n"
+            f"[dim]{result.skill_path}[/dim]",
+            title="[bold]ACP-SEC Skill Scan[/bold]",
+            border_style=color,
+        )
+    )
+
+    total = 0
+    for layer, findings in result.findings.items():
+        if not findings:
+            continue
+        console.print(f"\n[bold]{_LAYER_TITLES.get(layer, layer)} layer[/bold]")
+        for f in findings:
+            total += 1
+            sev_color = SEVERITY_COLORS.get(f.severity, "white")
+            evidence = f.evidence[0] if f.evidence else ""
+            console.print(
+                f"  [{sev_color}]{f.severity.value:8}[/{sev_color}] "
+                f"[bold]{f.check_id}[/bold]  {f.name}"
+            )
+            console.print(f"      [dim]{evidence}[/dim]")
+
+    if total == 0:
+        console.print("\n[green]No findings — nothing suspicious detected.[/green]")
+    console.print()
+
+
+def save_json(data: AssessmentResult | InjectionSuiteResult | SkillScanResult, output: str | Path) -> None:
     Path(output).write_text(json.dumps(data.model_dump(), indent=2, default=str))
     console.print(f"[dim]Results saved to {output}[/dim]")

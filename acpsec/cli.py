@@ -26,8 +26,9 @@ from .config_loader import load_config
 from .injection import InjectionRunner
 from .injection.payloads import CATEGORIES
 from .models import AgentConfig, DimensionResult
-from .reporter import print_assessment, print_injection_report, save_json
+from .reporter import print_assessment, print_injection_report, print_skill_scan, save_json
 from .scorer import ScoringEngine
+from .skill_scan import EXIT_CODES, scan_skill
 
 console = Console()
 
@@ -418,6 +419,33 @@ def report(results_json: Path, fmt: str) -> None:
     else:
         console.print("[red]Unrecognized results format.[/red]")
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# acpsec scan-skill
+# ---------------------------------------------------------------------------
+@main.command("scan-skill")
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON to stdout.")
+def scan_skill_cmd(path: Path, as_json: bool) -> None:
+    """Statically audit an agent skill folder before installing it.
+
+    Scans SKILL.md (manifest + instructions) and any bundled scripts for
+    injection, exfiltration, obfuscation, sensitive-path access, and autorun
+    persistence.  Never executes anything inside the folder.
+
+    Exit codes: 0 = PASS, 1 = WARN, 2 = FAIL.
+    """
+    import json as _json
+
+    result = scan_skill(path)
+
+    if as_json:
+        click.echo(_json.dumps(result.model_dump(mode="json"), indent=2, default=str))
+    else:
+        print_skill_scan(result)
+
+    sys.exit(EXIT_CODES[result.verdict])
 
 
 # ---------------------------------------------------------------------------
