@@ -132,6 +132,62 @@ See [ACP-SEC-Framework-v0.1.md](ACP-SEC-Framework-v0.1.md) for the full specific
 
 ---
 
+## Skill Scanning — `acpsec scan-skill` (F1)
+
+A pre-install security audit for **agent skills** — folders containing a
+`SKILL.md` (instructions loaded into an agent's context) plus optional
+supporting scripts. Under the v0.1 threat model a malicious skill is both an
+**Insider** (it arrives as instructions) and a **Malicious Tool** (it ships code
+that executes), so `scan-skill` audits both layers **statically** before you run
+`cp -R skill ~/.claude/skills/`.
+
+```bash
+# Human-readable report
+acpsec scan-skill ./some-skill
+
+# Machine-readable JSON (stable schema, for CI)
+acpsec scan-skill ./some-skill --json
+```
+
+Exit codes: **0 = PASS**, **1 = WARN**, **2 = FAIL**. Every finding carries
+`file:line` evidence.
+
+### What it checks
+
+| Layer | Rule ids | Catches |
+|---|---|---|
+| **Manifest** | `SKILL-MANIFEST-01/02` | missing/malformed frontmatter; executable files not referenced in `SKILL.md` |
+| **Instruction** | `SKILL-INSTR-EXFIL / OVERRIDE / SECRECY / SCOPE / FETCHEXEC / HIDDEN` | credential-exfiltration directives, "ignore previous instructions", secrecy directives, scope escalation, remote fetch-and-execute, hidden content (HTML comments, zero-width chars, base64) |
+| **Code** | `SKILL-CODE-OBFUS / NET / SENSPATH-KEY / SENSPATH-CFG / ENVEXFIL / DESTRUCT`, `SKILL-AUTORUN-*` | `eval`/`exec` of decoded strings, network egress (declared vs undeclared vs known exfil sink), reads of private-key/credential material, env-dump-to-network combos, destructive commands, cron/launchctl/systemd/rc-file persistence |
+
+Verdict: **PASS** (nothing ≥ MEDIUM) · **WARN** (mediums only) · **FAIL** (any
+HIGH/CRITICAL). The instruction layer is **quote/fence-aware** — attack
+phrasings quoted inside fenced code blocks, blockquotes, or documentation-framed
+quotes are treated as examples, not directives (so a guide *about* injection
+still passes). Dogfood results: [docs/scan_skill/dogfood-results.md](docs/scan_skill/dogfood-results.md).
+
+### What it cannot catch (static-only limits)
+
+`scan-skill` reads files; it **never executes** anything in the skill folder.
+That means it is blind to:
+
+- **Runtime behavior** — code that only reveals intent when run (dynamic URL
+  construction, time/environment-gated payloads, reflection).
+- **Novel obfuscation** — encodings or packing outside the rule set; the
+  obfuscation rules are heuristics, not a decompiler.
+- **Injection phrasing outside the rule set** — paraphrased or newly-worded
+  malicious instructions the patterns don't yet match.
+- **Multi-line exfiltration phrasing** — the exfil rule requires the sensitive
+  reference and the output directive on the *same line* (a deliberate
+  precision choice, tuned during dogfooding); phrasing split across lines can
+  evade it.
+- **Compiled/binary payloads** and anything fetched from the network at run time.
+
+Treat a PASS as "no *known-pattern* red flags found," not "proven safe." It is a
+fast pre-install triage, not a substitute for reading a skill you don't trust.
+
+---
+
 ## Acknowledgments
 
 - ERC-8183 specification by the Ethereum Foundation dAI team ([@DavideCrapis](https://github.com/DavideCrapis))

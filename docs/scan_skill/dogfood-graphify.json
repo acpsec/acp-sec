@@ -1,0 +1,16 @@
+{
+  "skill_name": "graphify",
+  "skill_path": "/Users/fadhlan/.claude/skills/graphify",
+  "timestamp": "2026-07-23T11:23:42.031413+00:00",
+  "verdict": "PASS",
+  "score": 100.0,
+  "max_score": 100.0,
+  "findings": {
+    "manifest": [],
+    "instruction": [],
+    "code": []
+  },
+  "metadata": {
+    "skill_md_path": "/Users/fadhlan/.claude/skills/graphify/SKILL.md"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "skill_name": "ckm:ui-styling",
+  "skill_path": "/Users/fadhlan/.claude/plugins/cache/ui-ux-pro-max-skill/ui-ux-pro-max/2.5.0/.claude/skills/ui-styling",
+  "timestamp": "2026-07-23T11:23:42.742983+00:00",
+  "verdict": "WARN",
+  "score": 76.0,
+  "max_score": 100.0,
+  "findings": {
+    "manifest": [
+      {
+        "check_id": "SKILL-MANIFEST-02",
+        "name": "Executable file not referenced in SKILL.md",
+        "dimension": "manifest",
+        "status": "warn",
+        "score": 0.0,
+        "max_score": 0.0,
+        "severity": "MEDIUM",
+        "evidence": [
+          "scripts/tests/test_shadcn_add.py:1: executable file present but never mentioned in the skill body"
+        ],
+        "recommendations": [
+          "Remove unused scripts, or document why the file ships with the skill."
+        ],
+        "details": {
+          "file": "scripts/tests/test_shadcn_add.py",
+          "line": 1,
+          "excerpt": "executable file present but never mentioned in the skill body",
+          "layer": "manifest"
+        }
+      },
+      {
+        "check_id": "SKILL-MANIFEST-02",
+        "name": "Executable file not referenced in SKILL.md",
+        "dimension": "manifest",
+        "status": "warn",
+        "score": 0.0,
+        "max_score": 0.0,
+        "severity": "MEDIUM",
+        "evidence": [
+          "scripts/tests/test_tailwind_config_gen.py:1: executable file present but never mentioned in the skill body"
+        ],
+        "recommendations": [
+          "Remove unused scripts, or document why the file ships with the skill."
+        ],
+        "details": {
+          "file": "scripts/tests/test_tailwind_config_gen.py",
+          "line": 1,
+          "excerpt": "executable file present but never mentioned in the skill body",
+          "layer": "manifest"
+        }
+      }
+    ],
+    "instruction": [],
+    "code": []
+  },
+  "metadata": {
+    "skill_md_path": "/Users/fadhlan/.claude/plugins/cache/ui-ux-pro-max-skill/ui-ux-pro-max/2.5.0/.claude/skills/ui-styling/SKILL.md"
+  }
+}
