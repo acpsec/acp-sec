@@ -6,7 +6,8 @@ plus a light Python ``ast`` pass.  **Never executes anything.**
 Findings:
   SKILL-CODE-OBFUS      eval/exec of decoded or assembled strings; opaque blobs
   SKILL-CODE-NET        network egress (severity depends on destination)
-  SKILL-CODE-SENSPATH   reads a sensitive path (ssh/aws/gcloud/.env/keychain/…)
+  SKILL-CODE-SENSPATH-KEY  reads private-key / credential material (Tier A → HIGH)
+  SKILL-CODE-SENSPATH-CFG  reads ambiguous config (Tier B → MEDIUM; HIGH with net)
   SKILL-CODE-ENVEXFIL   environment dump + network sink in the same file
   SKILL-CODE-DESTRUCT   rm -rf outside the skill dir, dd, mkfs
   SKILL-AUTORUN-CRON    crontab persistence
@@ -59,12 +60,22 @@ _NET_PATTERNS = [
     re.compile(r"\bwget\b", re.I),
 ]
 
-_SENSITIVE_PATH_RE = re.compile(
-    r"(~/\.ssh|\.ssh/|id_rsa|id_ed25519|~/\.aws|\.aws/credentials|"
-    r"~/\.config/gcloud|gcloud/credentials|\.env\b|keychain|"
-    r"security\s+find-(generic|internet)-password|"
+# Tier A — private-key / live-credential material.  A read alone is HIGH (FAIL).
+_SENSPATH_KEY_RE = re.compile(
+    r"(id_rsa|id_ed25519|id_dsa|id_ecdsa|"
+    r"\.aws/credentials|gcloud/[^\s'\"]*credential|"
+    r"security\s+find-(generic|internet)-password|login\.keychain|\bKeychains?\b|"
+    r"\.ethereum/keystore|wallet\.dat|MetaMask|keystore|"
+    r"Login Data|key4\.db|logins\.json|cookies\.sqlite|"
     r"Library/Application Support/Google/Chrome|\.mozilla/firefox|"
-    r"\.ethereum/keystore|wallet\.dat|MetaMask|Keychains)",
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----)",
+    re.I,
+)
+
+# Tier B — ambiguous config.  MEDIUM alone; escalates to HIGH only when a
+# network sink is present in the same file (SENSPATH+NET combo).
+_SENSPATH_CFG_RE = re.compile(
+    r"(\.env\b|~/\.ssh/config|\.ssh/config|~/\.aws/config\b|\.aws/config\b)",
     re.I,
 )
 
@@ -123,7 +134,8 @@ def _scan_file(name: str, source: str, suffix: str, declared: set[str]) -> list[
     file_domains: set[str] = set()
     has_env_dump = False
     obfus_lines: set[int] = set()
-    sens_line: int | None = None
+    key_line: int | None = None
+    cfg_line: int | None = None
 
     for i, line in enumerate(lines, start=1):
         for dom in _URL_RE.findall(line):
@@ -135,8 +147,10 @@ def _scan_file(name: str, source: str, suffix: str, declared: set[str]) -> list[
         if _ENV_DUMP_RE.search(line):
             has_env_dump = True
 
-        if _SENSITIVE_PATH_RE.search(line) and sens_line is None:
-            sens_line = i
+        if key_line is None and _SENSPATH_KEY_RE.search(line):
+            key_line = i
+        if cfg_line is None and _SENSPATH_CFG_RE.search(line):
+            cfg_line = i
 
         if _OBFUS_EVAL_RE.search(line) and (_OBFUS_DECODE_RE.search(line) or _CHARCODE_RE.search(line)):
             obfus_lines.add(i)
@@ -183,11 +197,25 @@ def _scan_file(name: str, source: str, suffix: str, declared: set[str]) -> list[
                                          Severity.CRITICAL, name, ln, excerpt,
                                          "Never transmit the process environment off the machine."))
 
-    if sens_line is not None:
-        excerpt = lines[sens_line - 1].strip()[:120] if sens_line - 1 < len(lines) else ""
-        findings.append(make_finding("SKILL-CODE-SENSPATH", "Reads a sensitive path", LAYER,
-                                     Severity.HIGH, name, sens_line, excerpt,
-                                     "Skill reads credentials/keys outside its own directory."))
+    # Tier A — private-key / credential material: HIGH, disqualifying on its own.
+    if key_line is not None:
+        excerpt = lines[key_line - 1].strip()[:120] if key_line - 1 < len(lines) else ""
+        findings.append(make_finding("SKILL-CODE-SENSPATH-KEY",
+                                     "Reads private-key / credential material", LAYER,
+                                     Severity.HIGH, name, key_line, excerpt,
+                                     "Skill reads private keys or live credentials — no legitimate "
+                                     "purpose in a third-party skill."))
+
+    # Tier B — ambiguous config: MEDIUM alone, HIGH when a network sink co-occurs.
+    if cfg_line is not None:
+        severity = Severity.HIGH if net_lines else Severity.MEDIUM
+        note = "config read + network egress" if net_lines else "config read"
+        excerpt = lines[cfg_line - 1].strip()[:120] if cfg_line - 1 < len(lines) else ""
+        findings.append(make_finding("SKILL-CODE-SENSPATH-CFG",
+                                     f"Reads ambiguous config file ({note})", LAYER,
+                                     severity, name, cfg_line, excerpt,
+                                     "Reading config is ambiguous alone; combined with network egress "
+                                     "it is likely exfiltration."))
 
     return findings
 

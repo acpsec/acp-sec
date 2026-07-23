@@ -14,12 +14,15 @@ fixture must surface:
 | `inj_override/` | FAIL | `SKILL-INSTR-OVERRIDE` (+ `SKILL-INSTR-SECRECY`) |
 | `code_obfuscated/` | FAIL | `SKILL-CODE-OBFUS` (+ `SKILL-MANIFEST-02` for unreferenced `run.sh`) |
 | `code_netexfil/` | FAIL | `SKILL-CODE-NET` (exfil sink) + `SKILL-CODE-ENVEXFIL` |
-| `code_sensitive_path/` | WARN or FAIL | `SKILL-CODE-SENSPATH` |
+| `code_sensitive_path/` | FAIL | `SKILL-CODE-SENSPATH-KEY` (Tier A, HIGH) |
 | `hook_autorun/` | FAIL | `SKILL-AUTORUN-*` |
 
-`benign_network` and `code_sensitive_path` are precision cases whose exact
-verdict is tuned in Phase 5; tests assert the verdict is within the allowed set
-above, never the disallowed one (never FAIL for `benign_network`; never PASS for
-`code_sensitive_path`).
+`benign_network` is a precision case whose exact verdict is tuned in Phase 5
+(never FAIL). `SKILL-CODE-SENSPATH` is split into two tiers: **Tier A**
+(`-KEY`, private-key / live-credential material) is HIGH and fails on its own;
+**Tier B** (`-CFG`, ambiguous config such as bare `.env` / `~/.aws/config`) is
+MEDIUM alone and escalates to HIGH only via the SENSPATH+NET / ENVEXFIL combo.
+`code_sensitive_path` reads `id_rsa` + `~/.aws/credentials` + gcloud creds →
+Tier A present → verdict FAIL.
 
 No fixture is ever executed by the scanner — analysis is static only.
