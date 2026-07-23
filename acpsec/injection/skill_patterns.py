@@ -55,8 +55,11 @@ _SECRECY_PATTERNS = [
     re.compile(r"don'?t\s+(tell|mention|let\s+the\s+user)", re.I),
     re.compile(r"keep\s+(this|it|these|that)\b.{0,40}\b(secret|hidden|confidential)", re.I),
     re.compile(r"without\s+(telling|informing|notifying)\s+the\s+user", re.I),
-    re.compile(r"\bsilently\b", re.I),
-    re.compile(r"hide\s+(this|these|it|the\s+fact)", re.I),
+    re.compile(r"(secretly|covertly)\b", re.I),
+    re.compile(r"hide\s+(this|these|it|the\s+fact|your\s+\w+|.{0,20}from\s+the\s+user)", re.I),
+    # "silently" only counts when tied to concealment from the user — the bare
+    # word is common in benign "read it silently and present" phrasing.
+    re.compile(r"silently\b.{0,30}\b(from\s+the\s+user|without\s+the\s+user|so\s+the\s+user)", re.I),
 ]
 
 _FETCHEXEC_PATTERNS = [
@@ -107,18 +110,18 @@ def scan_instructions(manifest: SkillManifest) -> list[CheckResult]:
                                    "Do not download and execute remote code from a skill instruction."))
                 break
 
-    # Exfiltration: a sensitive token anywhere + an output-inclusion directive.
-    has_sensitive = any(_SENSITIVE_TOKEN_RE.search(t) for _, t in scannable)
-    if has_sensitive:
-        for line_no, text in scannable:
-            if _EXFIL_OUTPUT_RE.search(text):
-                findings.append(_f("SKILL-INSTR-EXFIL", "Credential-exfiltration directive",
-                                   Severity.CRITICAL, line_no, text,
-                                   "Skills must never read secrets and place them in agent output."))
-                exfil_hit = True
+    # Exfiltration: a sensitive token AND an output-inclusion directive on the
+    # SAME line — proximity keeps an unrelated secret mention and an unrelated
+    # "print verbatim" line from combining into a false positive.
+    for line_no, text in scannable:
+        if _SENSITIVE_TOKEN_RE.search(text) and _EXFIL_OUTPUT_RE.search(text):
+            findings.append(_f("SKILL-INSTR-EXFIL", "Credential-exfiltration directive",
+                               Severity.CRITICAL, line_no, text,
+                               "Skills must never read secrets and place them in agent output."))
+            exfil_hit = True
 
     # Scope escalation: instructed access to sensitive paths without an exfil sink.
-    if has_sensitive and not exfil_hit:
+    if not exfil_hit:
         for line_no, text in scannable:
             if _SENSITIVE_TOKEN_RE.search(text) and _ACCESS_VERB_RE.search(text):
                 findings.append(_f("SKILL-INSTR-SCOPE", "Scope-escalation directive",

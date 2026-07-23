@@ -44,6 +44,33 @@ def test_benign_basic_has_no_instruction_findings():
     assert _scan("benign_basic") == []
 
 
+def _tmp_manifest(tmp_path, body: str, desc: str = "does a thing"):
+    from acpsec.config_loader import load_skill_manifest
+
+    skill = tmp_path / "s"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(f"---\nname: s\ndescription: {desc}\n---\n\n{body}\n")
+    return load_skill_manifest(skill)
+
+
+def test_benign_silently_is_not_a_secrecy_directive(tmp_path):
+    # Dogfood regression: "read it silently and present" is operational, not
+    # a concealment-from-the-user directive.
+    m = _tmp_manifest(tmp_path, "Read the file silently and present a summary to the user.")
+    assert "SKILL-INSTR-SECRECY" not in _ids(scan_instructions(m))
+
+
+def test_unrelated_secret_mention_plus_verbatim_is_not_exfil(tmp_path):
+    # Dogfood regression: an API_KEY mentioned on one line and a "print
+    # verbatim" of unrelated help text on another must NOT combine into EXFIL.
+    body = (
+        "Check whether GEMINI_API_KEY is set in the environment.\n\n"
+        "If the user runs --help, print the Usage section verbatim.\n"
+    )
+    m = _tmp_manifest(tmp_path, body)
+    assert "SKILL-INSTR-EXFIL" not in _ids(scan_instructions(m))
+
+
 def test_security_doc_is_quote_and_fence_aware():
     # Attack phrasings quoted inside fenced blocks / blockquotes / quotes are
     # documentation, not directives — they must NOT be flagged.
