@@ -20,7 +20,6 @@ import copy
 import json
 
 from acpsec_api.scanner_auth import SCANNER_DENIED_ERROR
-from tests.api.conftest import assert_parity
 
 
 class _StubEngine:
@@ -176,16 +175,3 @@ def test_scan_enriches_data_fields(scan_client, monkeypatch) -> None:
     data = resp.json()["data"]
     assert data["x_username"] == "agentx"
     assert data["x_handle_verified"] is True
-
-
-# --- Parity (denial path only) -------------------------------------------
-
-def test_scan_parity_denial(fastapi_client, flask_client, monkeypatch) -> None:
-    # Gate rejects before the engine runs → no network, no writes. Safe to parity.
-    # Success-path parity would trigger the real heuristic engine, so it is only
-    # asserted FastAPI-only via the stubbed engine above.
-    monkeypatch.setenv("SCANNER_TOKEN", "sekret")
-    assert_parity(
-        fastapi_client, flask_client, "/api/scanner/scan", "POST",
-        json=_VALID_BODY,
-    )

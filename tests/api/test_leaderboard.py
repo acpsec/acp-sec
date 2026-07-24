@@ -1,20 +1,18 @@
-"""Parity + contract tests for leaderboard endpoints (Task 2.4).
+"""Contract tests for leaderboard endpoints.
 
 Contracts (from dashboard/serve.py):
     GET  /api/leaderboard        -> 200 {ok, updated, checks_per_scan, count, agents[]}
     GET  /api/report/{id}        -> 200 {ok:True, data} | 404 report_not_found | 400 invalid
     POST /api/leaderboard/auth   -> open {ok,token:"open"} | 401 wrong | 200 {ok} + cookie
 
-Parity note: the real dashboard/leaderboard.json + dashboard/reports/ are seeded,
-so full parity uses the default (real-file-backed) client on BOTH apps — they read
-the same files. Empty / seeded-shape assertions use an isolated temp-backed client.
+Endpoint contracts are asserted against isolated temp-backed stores; the Flask
+byte-for-byte parity oracle was retired with the Flask service.
 """
 
 from __future__ import annotations
 
 import json
 
-from tests.api.conftest import assert_parity
 
 
 def _parse_cookie(header: str) -> dict:
@@ -36,7 +34,7 @@ def _assert_lb_cookie(header: str) -> None:
     # (frontend on Vercel, API on Railway) the lb_session cookie must be sent
     # cross-origin, so the production default is now SameSite=None; Secure
     # (was SameSite=Lax; not-Secure, matching Flask). Flask is unchanged; this
-    # deviation is deliberate — see test_auth_correct_parity + test_cookie_*.
+    # deviation is deliberate — see test_cookie_* for the SameSite/Secure config.
     c = _parse_cookie(header)
     assert c["__name__"] == "lb_session"
     assert c["__value__"].startswith("lb_")
@@ -125,11 +123,8 @@ def test_leaderboard_null_scores_handled(leaderboard_client) -> None:
     assert by_name["Scored"]["rank"] == 1
 
 
-# NOTE: /api/leaderboard has no populated-state parity test on purpose — the real
-# seeded dashboard/leaderboard.json contains a null-score agent that makes the
-# Flask reference 500 (see test_leaderboard_null_scores_handled). Empty-state
-# parity is not asserted either, since Flask's store is the always-present seed
-# file (not externally emptyable). Report + auth parity below still apply.
+# /api/leaderboard populated + empty states are covered above against isolated
+# temp-backed stores (test_leaderboard_populated / test_leaderboard_empty).
 
 
 # --- GET /api/report/{id} -------------------------------------------------
@@ -167,15 +162,6 @@ def test_report_invalid_id(leaderboard_client) -> None:
     assert resp.json() == {"ok": False, "error": "invalid agent id"}
 
 
-# test_report_found_parity retired in Group 9.6: the move relocated the seed
-# reports out of the Flask tree (dashboard/reports/ -> data/reports/), so the
-# retired Flask oracle can no longer read them. api-prod's live 200 on
-# /api/report/<id> is the ground truth; the not-found parity below still holds
-# (both apps 404 on a missing id).
-def test_report_not_found_parity(fastapi_client, flask_client) -> None:
-    assert_parity(fastapi_client, flask_client, "/api/report/nonexistent_xyz", "GET")
-
-
 # --- POST /api/leaderboard/auth ------------------------------------------
 
 def test_auth_no_password_open(leaderboard_client, monkeypatch) -> None:
@@ -205,45 +191,6 @@ def test_auth_wrong_password(leaderboard_client, monkeypatch) -> None:
     assert resp.status_code == 401
     assert resp.json() == {"ok": False, "error": "Incorrect password"}
     assert "set-cookie" not in resp.headers
-
-
-def test_auth_wrong_parity(fastapi_client, flask_client, monkeypatch) -> None:
-    monkeypatch.setenv("LEADERBOARD_PASSWORD", "s3cret")
-    assert_parity(
-        fastapi_client, flask_client, "/api/leaderboard/auth", "POST",
-        json={"password": "nope"},
-    )
-
-
-def test_auth_correct_parity(fastapi_client, flask_client, monkeypatch) -> None:
-    # Task 2.8 INTENTIONAL PARITY BREAK: the JSON body + the stable cookie fields
-    # (name, value prefix, max-age, httponly, path) still match Flask, but the
-    # SameSite/Secure flags DIVERGE on purpose — FastAPI now ships cross-origin
-    # defaults (SameSite=None; Secure) while Flask keeps SameSite=Lax; not-Secure.
-    monkeypatch.setenv("LEADERBOARD_PASSWORD", "s3cret")
-    monkeypatch.delenv("ACPSEC_COOKIE_SAMESITE", raising=False)
-    monkeypatch.delenv("ACPSEC_COOKIE_SECURE", raising=False)
-    fa = fastapi_client.post("/api/leaderboard/auth", json={"password": "s3cret"})
-    fl = flask_client.post("/api/leaderboard/auth", json={"password": "s3cret"})
-
-    assert fa.status_code == fl.status_code == 200
-    assert fa.json() == fl.get_json() == {"ok": True}
-
-    fa_c = _parse_cookie(fa.headers["set-cookie"])
-    fl_c = _parse_cookie(fl.headers["Set-Cookie"])
-
-    # Stable fields still match (token values differ by design).
-    assert fa_c["__name__"] == fl_c["__name__"] == "lb_session"
-    assert fa_c["__value__"].startswith("lb_") and fl_c["__value__"].startswith("lb_")
-    assert fa_c.get("max-age") == fl_c.get("max-age") == "604800"
-    assert fa_c.get("httponly") is True and fl_c.get("httponly") is True
-    assert fa_c.get("path") == fl_c.get("path") == "/"
-
-    # Deliberate divergence — this is the whole point of Task 2.8.
-    assert str(fa_c.get("samesite", "")).lower() == "none"
-    assert "secure" in fa_c
-    assert str(fl_c.get("samesite", "")).lower() == "lax"
-    assert "secure" not in fl_c
 
 
 # --- Cookie flag env configuration (Task 2.8) ----------------------------

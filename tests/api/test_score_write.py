@@ -141,28 +141,3 @@ def test_post_manual_invalid(isolated_client) -> None:
     resp = client.post("/api/score/manual", json={"agent_name": "x"})
     assert resp.status_code == 422
     assert resp.json() == {"error": "'controls' list is required and must be non-empty"}
-
-
-# --- Full parity vs Flask (creates + cleans up real state) ----------------
-
-def test_post_parity_with_flask(fastapi_client, flask_client) -> None:
-    try:
-        fa_post = fastapi_client.post("/api/score", json=_ACPSEC_PAYLOAD)
-        fl_post = flask_client.post("/api/score", json=_ACPSEC_PAYLOAD)
-        assert fa_post.status_code == fl_post.status_code
-        assert fa_post.json() == fl_post.get_json()
-
-        fa_get = fastapi_client.get("/api/score")
-        fl_get = flask_client.get("/api/score")
-        assert fa_get.status_code == fl_get.status_code
-        assert fa_get.json() == fl_get.get_json()
-
-        # Manual endpoint parity
-        fa_m = fastapi_client.post("/api/score/manual", json=_MANUAL_PAYLOAD)
-        fl_m = flask_client.post("/api/score/manual", json=_MANUAL_PAYLOAD)
-        assert fa_m.status_code == fl_m.status_code
-        assert fa_m.json() == fl_m.get_json()
-    finally:
-        # Clean up the polluted real store on BOTH apps.
-        fastapi_client.delete("/api/score")
-        flask_client.delete("/api/score")

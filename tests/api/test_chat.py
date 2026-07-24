@@ -31,7 +31,6 @@ from fastapi.testclient import TestClient
 
 from acpsec_api.deps import get_anthropic_client
 from acpsec_api.main import app as fastapi_app
-from tests.api.conftest import assert_parity
 
 
 class _FakeMessages:
@@ -219,23 +218,3 @@ def test_chat_generic_error(chat_client, monkeypatch) -> None:
     )
     assert resp.status_code == 500
     assert resp.json() == {"ok": False, "error": "Chat error: boom"}
-
-
-# --- Parity (paths reachable without a live Claude call) ------------------
-
-def test_chat_parity_missing_key(fastapi_client, flask_client, monkeypatch) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    assert_parity(
-        fastapi_client, flask_client, "/api/chat/sentryagent", "POST",
-        json={"messages": [{"role": "user", "content": "hi"}]},
-    )
-
-
-def test_chat_parity_empty_messages(fastapi_client, flask_client, monkeypatch) -> None:
-    # Key set + anthropic importable → both reach the empty-messages 422 without
-    # any Claude call (sanitise returns before messages.create).
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    assert_parity(
-        fastapi_client, flask_client, "/api/chat/sentryagent", "POST",
-        json={"messages": []},
-    )
