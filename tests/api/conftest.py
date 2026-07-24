@@ -43,7 +43,8 @@ def temp_store(tmp_path: Path) -> ScoreStore:
 @pytest.fixture
 def isolated_client(temp_store: ScoreStore):
     """FastAPI TestClient whose ScoreStore dependency is overridden with a
-    temp-backed store, so score-read tests never touch dashboard/score_store.json.
+    temp-backed store, so score-read tests never touch the real score store
+    (data/score_store.json).
 
     Yields ``(client, temp_store)`` so tests can seed the store directly.
     """

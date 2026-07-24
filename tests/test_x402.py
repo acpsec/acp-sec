@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 # tests/mocks/ holds the stdlib http.server test doubles (relocated out of the
-# retiring Flask dashboard/); it is not a package, so add it to sys.path.
+# since-deleted Flask dashboard/); it is not a package, so add it to sys.path.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "tests" / "mocks"))

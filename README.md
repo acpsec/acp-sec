@@ -233,8 +233,6 @@ acp-sec/
 │       └── runner.py           # Injection test runner
 ├── examples/
 │   ├── agent.yaml              # Example agent config
-│   ├── hardened_agent.yaml     # Fully-hardened example agent
-│   ├── bankrbot_simulation.yaml
 │   ├── x402_agent_compliant.yaml         # v0.2.0 — 10/10 SECURE
 │   └── x402_agent_misconfigured.yaml     # v0.2.0 — 0/10 COMPROMISED
 └── tests/
