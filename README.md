@@ -52,53 +52,6 @@ acpsec inject -c my-agent.yaml --suite role_confusion
 acpsec inject -c my-agent.yaml -o injection-report.json
 ```
 
-### 5. Launch the dashboard
-
-```bash
-# Install dashboard dependencies
-pip install -r dashboard/requirements.txt
-
-# Start the server
-python dashboard/serve.py
-# → http://localhost:5000
-```
-
-### 6. Load results into the dashboard
-
-**Option A — Pipe directly from CLI:**
-```bash
-acpsec check -c my-agent.yaml -o report.json
-curl -s -X POST \
-  -H "Content-Type: application/json" \
-  --data-binary @report.json \
-  http://localhost:5000/api/score
-```
-
-**Option B — File upload:**
-Open http://localhost:5000, click **📁 Load Report**, select `report.json`.
-
-**Option C — API button:**
-After posting data via Option A, click **🔄 Load from API** in the dashboard header.
-
-The dashboard auto-polls `/api/score` on page load — if data exists, it renders immediately.
-
----
-
-## Dashboard API
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| `GET`  | `/` | Serve dashboard HTML |
-| `POST` | `/api/score` | Accept acpsec JSON output, store + normalise |
-| `GET`  | `/api/score` | Return current score data |
-| `DELETE` | `/api/score` | Clear stored data |
-
-**Accepted JSON formats:**
-- `acpsec check` output (`AssessmentResult` — has `dimensions` key)
-- Dashboard native format (has `controls` key)
-
----
-
 ## Scoring Bands
 
 | Score | Band | Verdict |
@@ -226,17 +179,6 @@ The X402 dimension audits an agent's posture for participating safely:
 | X402-INJ-01  | 1 | MEDIUM   | X-PAYMENT header injection protection |
 | X402-AZUL-01 | 1 | LOW      | Base Azul multiproof finality awareness (mainnet 2026-05-13) |
 
-When run via the authenticated scanner (`dashboard/auth_scanner.py`), 4
-additional **X402-LIVE** probes exercise the wire-format end-to-end against
-either the agent's configured facilitator or a bundled mock:
-
-```text
-X402-LIVE-01  nonce replay rejected by facilitator     (HTTP, $0)
-X402-LIVE-02  mangled signature rejected               (HTTP, $0)
-X402-LIVE-03  malformed payload rejected               (HTTP, $0)
-X402-LIVE-04  above-cap settlement refused by agent    (LLM, ~$0.002)
-```
-
 ### Add x402 to your agent YAML
 
 ```yaml
@@ -289,16 +231,9 @@ acp-sec/
 │   └── injection/
 │       ├── payloads.py         # 27 payloads, 6 categories
 │       └── runner.py           # Injection test runner
-├── dashboard/
-│   ├── acp-sec-dashboard.html  # Standalone + API-connected dashboard
-│   ├── serve.py                # Flask server
-│   ├── scanner.py              # Public heuristic scanner
-│   ├── auth_scanner.py         # Authenticated live-probe scanner
-│   ├── mock_facilitator.py     # v0.2.0 — bundled mock x402 facilitator
-│   └── requirements.txt
 ├── examples/
 │   ├── agent.yaml              # Example agent config
-│   ├── hardened_agent.yaml     # Positive control for live probes
+│   ├── hardened_agent.yaml     # Fully-hardened example agent
 │   ├── bankrbot_simulation.yaml
 │   ├── x402_agent_compliant.yaml         # v0.2.0 — 10/10 SECURE
 │   └── x402_agent_misconfigured.yaml     # v0.2.0 — 0/10 COMPROMISED
