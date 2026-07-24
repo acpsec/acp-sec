@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 
 from acpsec_api.scanner_auth import SCANNER_DENIED_ERROR
-from tests.api.conftest import assert_parity
 
 
 class _BulkStubEngine:
@@ -221,16 +220,3 @@ def test_bulk_engine_unavailable(scan_client, monkeypatch) -> None:
     resp = client.post("/api/scanner/bulk", json={"usernames": ["alpha"]})
     assert resp.status_code == 503
     assert resp.json() == {"error": "scanner module not available"}
-
-
-# --- Parity (denial path only) -------------------------------------------
-
-def test_bulk_parity_denial(fastapi_client, flask_client, monkeypatch) -> None:
-    # Gate rejects before the engine runs -> no network, no writes, no sleeps.
-    # Success-path parity would trigger the real heuristic engine + 5s throttles,
-    # so it is asserted FastAPI-only via the stubbed engine above.
-    monkeypatch.setenv("SCANNER_TOKEN", "sekret")
-    assert_parity(
-        fastapi_client, flask_client, "/api/scanner/bulk", "POST",
-        json={"usernames": ["alpha", "beta"]},
-    )

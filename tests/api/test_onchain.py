@@ -23,7 +23,6 @@ from fastapi.testclient import TestClient
 from acpsec_api.deps import get_onchain_checker
 from acpsec_api.main import app as fastapi_app
 from acpsec_api.scanner_auth import SCANNER_DENIED_ERROR
-from tests.api.conftest import assert_parity
 
 
 def _result(registered, *, error=None, log_count=0):
@@ -208,16 +207,3 @@ def test_onchain_checker_unavailable(onchain_client, monkeypatch) -> None:
     )
     assert resp.status_code == 503
     assert resp.json() == {"ok": False, "error": "acpsec.onchain not available"}
-
-
-# --- Parity (denial path only — success needs a live Base RPC call) -------
-
-def test_onchain_parity_denial(fastapi_client, flask_client, monkeypatch) -> None:
-    # Both apps deny identically when a token is required but none is provided.
-    # Only the denial path is parity-tested; the success path would hit a live
-    # Base RPC, so it is asserted FastAPI-only via mocks above.
-    monkeypatch.setenv("SCANNER_TOKEN", "sekret")
-    assert_parity(
-        fastapi_client, flask_client, "/api/onchain/check", "POST",
-        json={"wallet": "0xabc"},
-    )

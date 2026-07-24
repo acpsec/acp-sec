@@ -17,7 +17,6 @@ Contract:
 from __future__ import annotations
 
 from acpsec_api.scanner_auth import SCANNER_DENIED_ERROR
-from tests.api.conftest import assert_parity
 
 _MOCK_PROFILE = {
     "username": "agentx",
@@ -151,16 +150,3 @@ def test_lookup_scanner_unavailable(scanner_client, monkeypatch) -> None:
     resp = client.post("/api/scanner/lookup", json={"username": "agentx"})
     assert resp.status_code == 503
     assert resp.json() == {"error": "scanner module not available"}
-
-
-# --- Parity (denial path only — success needs live Nitter) ----------------
-
-def test_lookup_auth_parity_denial(fastapi_client, flask_client, monkeypatch) -> None:
-    # Both apps deny identically when a token is required but none is provided.
-    # NOTE: only the denial path is parity-tested — the success path would hit
-    # live Nitter, so it is asserted FastAPI-only via mocks above.
-    monkeypatch.setenv("SCANNER_TOKEN", "sekret")
-    assert_parity(
-        fastapi_client, flask_client, "/api/scanner/lookup", "POST",
-        json={"username": "agentx"},
-    )

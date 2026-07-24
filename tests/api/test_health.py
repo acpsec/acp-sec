@@ -6,7 +6,6 @@ Contract (from dashboard/serve.py):
 
 from __future__ import annotations
 
-from tests.api.conftest import assert_parity
 
 
 def test_health_returns_expected_shape(fastapi_client, monkeypatch) -> None:
@@ -26,7 +25,3 @@ def test_health_returns_expected_shape(fastapi_client, monkeypatch) -> None:
     # scanner_protected is computed per-request from SCANNER_TOKEN presence.
     monkeypatch.setenv("SCANNER_TOKEN", "sekret")
     assert fastapi_client.get("/api/health").json()["scanner_protected"] is True
-
-
-def test_health_parity_with_flask(fastapi_client, flask_client) -> None:
-    assert_parity(fastapi_client, flask_client, "/api/health")

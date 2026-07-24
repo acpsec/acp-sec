@@ -1,11 +1,7 @@
 # CI — pytest gate for acp-sec.
 #
-# TEMPORARY (Flask): the `pip install flask` step and the guard + 13
-# FastAPI-vs-Flask parity tests it enables are transitional. Flask is the
-# read-only oracle for the byte-for-byte parity tests. Both the flask install
-# and the "import dashboard.serve" guard below MUST be deleted in the SAME
-# commit that removes the Flask dashboard service (final Group 9 step). Until
-# then they keep the parity tests actually running instead of silently skipping.
+# Single job, single Python version, no secrets. Runs the full test suite on
+# push and PR to main.
 name: CI
 
 on:
@@ -29,16 +25,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,api]"
-          # TEMPORARY (see file header): explicit flask install — NOT
-          # `-r requirements.txt`, which is a Flask-dashboard DEPLOY manifest
-          # that drags in gunicorn and other deploy-only dependencies.
-          pip install flask
-
-      - name: Guard — parity oracle must import (no silent skips)
-        # dashboard.serve backs the 13 parity tests via importorskip. If it
-        # can't import, those tests would skip and CI would look green while
-        # covering nothing. Turn that into a loud failure here.
-        run: python -c "import dashboard.serve"
 
       - name: Run test suite
         # -rs surfaces skip reasons in the log. The ONLY expected skips are the
