@@ -5,23 +5,15 @@ Layout:
   - Static checks: MCP-AUTH-01, MCP-AUTH-02, MCP-INJ-01, MCP-PRIV-01, MCP-GOV-01
   - Config parsing: YAML loading with MCP block
   - Scoring integration: OPTIONAL_DIMENSION_WEIGHTS, compliant vs misconfigured
-  - Mock MCP server: self-tests for the test server
 """
 
 from __future__ import annotations
 
-import json
-import sys
-import urllib.request
 from pathlib import Path
 
 import pytest
 
-# tests/mocks/ holds the stdlib http.server test doubles (relocated out of the
-# since-deleted Flask dashboard/); it is not a package, so add it to sys.path.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO_ROOT))
-sys.path.insert(0, str(_REPO_ROOT / "tests" / "mocks"))
 
 from acpsec.checks.mcp import run_mcp_checks
 from acpsec.config_loader import load_config
@@ -40,7 +32,6 @@ from acpsec.scorer import (
     total_max_score,
 )
 
-from mock_mcp_server import MockMCPServer
 
 
 # ---------------------------------------------------------------------------
@@ -334,125 +325,3 @@ class TestMCPConfigParsing:
         assert result.max_score == 12.0
         non_oauth = [c for c in result.checks if c.check_id != "MCP-OAUTH-01"]
         assert all(c.status == CheckStatus.FAIL for c in non_oauth)
-
-
-# ---------------------------------------------------------------------------
-# Mock MCP server self-tests
-# ---------------------------------------------------------------------------
-
-class TestMockMCPServer:
-    """Verify the mock MCP server works as expected."""
-
-    def test_health_endpoint(self):
-        with MockMCPServer() as mcp:
-            with urllib.request.urlopen(f"{mcp.url}/health") as r:
-                data = json.loads(r.read().decode())
-                assert data["status"] == "ok"
-                assert r.status == 200
-
-    def test_login_returns_token(self):
-        with MockMCPServer() as mcp:
-            body = json.dumps({"username": "user1", "password": "pass1"}).encode()
-            req = urllib.request.Request(
-                f"{mcp.url}/auth/login",
-                data=body,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req) as r:
-                data = json.loads(r.read().decode())
-                assert "token" in data
-                assert data["user"] == "user1"
-
-    def test_unauthenticated_tool_access_rejected(self):
-        with MockMCPServer() as mcp:
-            body = json.dumps({"tool": "read_document"}).encode()
-            req = urllib.request.Request(
-                f"{mcp.url}/tools/invoke",
-                data=body,
-                headers={"Content-Type": "application/json"},
-            )
-            with pytest.raises(urllib.error.HTTPError) as exc_info:
-                urllib.request.urlopen(req)
-            assert exc_info.value.code == 401
-
-    def test_authenticated_tool_invocation(self):
-        with MockMCPServer() as mcp:
-            # Login
-            login_body = json.dumps({"username": "user1", "password": "pass1"}).encode()
-            login_req = urllib.request.Request(
-                f"{mcp.url}/auth/login",
-                data=login_body,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(login_req) as r:
-                token = json.loads(r.read().decode())["token"]
-
-            # Invoke tool
-            tool_body = json.dumps({"tool": "read_document"}).encode()
-            tool_req = urllib.request.Request(
-                f"{mcp.url}/tools/invoke",
-                data=tool_body,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}",
-                },
-            )
-            with urllib.request.urlopen(tool_req) as r:
-                data = json.loads(r.read().decode())
-                assert "result" in data
-                assert data["result"]["status"] == "ok"
-
-    def test_tool_scoping_enforced(self):
-        with MockMCPServer() as mcp:
-            # Login as user2 (only has read_document)
-            login_body = json.dumps({"username": "user1", "password": "pass1"}).encode()
-            login_req = urllib.request.Request(
-                f"{mcp.url}/auth/login",
-                data=login_body,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(login_req) as r:
-                token = json.loads(r.read().decode())["token"]
-
-            # Try to invoke a tool not in scope
-            tool_body = json.dumps({"tool": "delete_file"}).encode()
-            tool_req = urllib.request.Request(
-                f"{mcp.url}/tools/invoke",
-                data=tool_body,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}",
-                },
-            )
-            with pytest.raises(urllib.error.HTTPError) as exc_info:
-                urllib.request.urlopen(tool_req)
-            assert exc_info.value.code == 403
-
-    def test_audit_log_recorded(self):
-        with MockMCPServer() as mcp:
-            # Login
-            login_body = json.dumps({"username": "user1", "password": "pass1"}).encode()
-            login_req = urllib.request.Request(
-                f"{mcp.url}/auth/login",
-                data=login_body,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(login_req) as r:
-                token = json.loads(r.read().decode())["token"]
-
-            # Invoke tool
-            tool_body = json.dumps({"tool": "read_document"}).encode()
-            tool_req = urllib.request.Request(
-                f"{mcp.url}/tools/invoke",
-                data=tool_body,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}",
-                },
-            )
-            with urllib.request.urlopen(tool_req):
-                pass
-
-            assert len(mcp.audit_log) == 1
-            assert mcp.audit_log[0]["tool"] == "read_document"
-            assert mcp.audit_log[0]["status"] == "success"
