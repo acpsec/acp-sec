@@ -10,7 +10,6 @@
       "data/*.json",
       "data/reports/**",
       "pyproject.toml",
-      "requirements.txt",
       "runtime.txt",
       "railway.staging.json"
     ]
