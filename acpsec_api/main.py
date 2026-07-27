@@ -21,7 +21,6 @@ from acpsec_api.routers import b20, chat, health, leaderboard, onchain, scanner,
 # env-overridable so staging/prod can lock the list down without a code change.
 _DEFAULT_CORS_ORIGINS = [
     "https://acpsec.app",
-    "https://staging.acpsec.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
