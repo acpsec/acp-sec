@@ -86,8 +86,8 @@ deliberate fix), not omissions.
 | `ACPSEC_COOKIE_SAMESITE` | `lb_session` cookie (`sessions.py`) | `none` | Local-dev override (`lax` for plain-http localhost). |
 | `ACPSEC_COOKIE_SECURE` | `lb_session` cookie | `true` | Local-dev override (`false` for plain-http localhost). |
 
-Static CORS allowlist default: `https://acpsec.app`, `https://staging.acpsec.app`,
-`http://localhost:3000`, `http://127.0.0.1:3000`, plus the Vercel-preview regex
+Static CORS allowlist default: `https://acpsec.app`, `http://localhost:3000`,
+`http://127.0.0.1:3000`, plus the Vercel-preview regex
 `https://acpsec-web-[a-z0-9-]+\.vercel\.app`. Credentialed CORS never uses `*`.
 
 ## Cutover checklist (reminder — executed in later groups)

@@ -90,16 +90,37 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    `eb595816` (07-24) and the 07-26 builds — two builds, two days, different
    fastapi. A lockfile is the fix if reproducibility is wanted; out of scope so
    far.
-2. **The dead `web` (Flask) Railway service still exists** — status Failed, no
-   repoTrigger, and **`acpsec.app` is still attached to it** as a custom domain
-   (DNS points at Vercel; the attachment is the old rollback linchpin). Deleting
-   the service is the separate infra "Step B", not yet done. Do not delete
-   without re-checking the `acpsec.app` domain attachment first.
-3. **`deploy/staging` is stale (last commit `5aa7988`, 2026-07-18 — 8 days) and
-   `web-staging` tracks it**, not `main`. So **web-staging is NOT a valid
-   rehearsal environment** for main-targeted changes — it's ~F1+A2a behind.
-   Syncing `deploy/staging` → `main` (or repointing web-staging to `main`) is a
-   separate item; until then, staging can't rehearse prod.
+2. **RESOLVED (2026-07-27) — the dead `web` (Flask) Railway service is DELETED.**
+   Sequence (two steps, not atomic): `acpsec.app`'s custom domain was **detached**
+   first (it resolves via Vercel, `216.198.79.1`, so zero downtime), freeing the
+   plan's custom-domain slot; then the `web` service itself was deleted. No Flask
+   service remains — reviving Flask is a **cold rebuild** (not a restart). Three
+   candidate commits, by what each is actually for:
+   - **`5ca798c`** — **proven to run in production**: `web`'s last successful deploy
+     (`bba131bd`, created 2026-07-14T01:35:43Z, RUNNING until the 07-16 stop). The
+     honest starting point for a revive — it is what actually served prod. (This is
+     what the deploy/staging "9.6 docs" pinned; it answered "what is proven to run,"
+     not "what is newest." It happens to be the Group 8/9 "9.3" merge.)
+   - **`544b87b`** — **last fully self-contained tree**: serve.py's imports are
+     intact, but it predates the SentryAgent chat/playground/profile features.
+   - **`2ee4813`** — **last commit with serve.py** (parent of the A2a deletion
+     `abb7e0c`/#7): newest features, but the 9.6 refactor `446e627` had already moved
+     `scanner.py` / `leaderboard.json` / `reports/` to `acpsec_api/` + `data/`
+     without repointing serve.py, so three import paths need fixing before it runs.
+   Cross-service refs auto-cleaned (`RAILWAY_SERVICE_WEB_URL` dropped from api-prod).
+3. **RESOLVED (2026-07-27) — the entire staging line is DELETED.** All three
+   pieces are gone: the `web-staging` Railway service, the `deploy/staging` git
+   branch (remote **and** local), and the `acp-sec-app` Vercel project at
+   `staging.acpsec.app` (plus its DNS record). Basis for deletion: zero *remote*
+   branch divergence, no organic traffic (bots/scanners only), no unique config,
+   an idle container burning trial credit. **Caveat surfaced during teardown:**
+   the remote-only divergence checks (`origin/main..origin/deploy/staging`) could
+   not see that the **local** `deploy/staging` ref held one unpushed commit — a
+   comment-only b20 mainnet-activation fix — which was rescued to `main` via
+   **PR #12** *before* the branch was force-deleted. `staging.acpsec.app` is also
+   dropped from the default CORS allowlist (this PR). **There is no staging /
+   pre-prod rehearsal environment now** — main-targeted changes go straight to
+   `api-prod`.
 4. **Railway `checkSuites` reports `true` on api-prod but does NOT gate.**
    Verified empirically: for `abb7e0c` the Railway build started 18:10:36Z,
    ~28s **before** the GitHub Actions run went green (18:11:04Z). A merge to
