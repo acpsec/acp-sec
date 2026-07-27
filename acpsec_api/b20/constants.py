@@ -67,8 +67,11 @@ DIMENSION_WEIGHTS: dict[str, float] = {
 # event topics are keccak256(eventSignature); feature keys are keccak256(name).
 # All verified against github.com/base/base-std and live on Base Sepolia.
 #
-# Activation status at pin time: Sepolia (84532) ALL ACTIVATED; Mainnet (8453)
-# NOT YET ACTIVATED (every feature flag off). See docs/reader-rework-v7.md.
+# Activation status: Sepolia (84532) ALL ACTIVATED. Mainnet (8453) was NOT
+# activated at original pin time but is now LIVE — verified on-chain 2026-07-19
+# (isActivated == true for ASSET / STABLECOIN / POLICY_REGISTRY; a real mainnet
+# B20 token scanned via POST /api/b20/scan {chain_id: 8453} returned a fully
+# rated result). See docs/reader-rework-v7.md.
 # ==========================================================================
 
 # --- Precompile addresses -------------------------------------------------
