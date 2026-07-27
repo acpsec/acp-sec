@@ -94,9 +94,20 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    Sequence (two steps, not atomic): `acpsec.app`'s custom domain was **detached**
    first (it resolves via Vercel, `216.198.79.1`, so zero downtime), freeing the
    plan's custom-domain slot; then the `web` service itself was deleted. No Flask
-   service remains — rollback is now a **cold rebuild** from commit `5ca798c` (the
-   last commit with the Flask tree intact), not a revive. Cross-service refs
-   auto-cleaned (`RAILWAY_SERVICE_WEB_URL` dropped from api-prod).
+   service remains — reviving Flask is a **cold rebuild** (not a restart). Three
+   candidate commits, by what each is actually for:
+   - **`5ca798c`** — **proven to run in production**: `web`'s last successful deploy
+     (`bba131bd`, created 2026-07-14T01:35:43Z, RUNNING until the 07-16 stop). The
+     honest starting point for a revive — it is what actually served prod. (This is
+     what the deploy/staging "9.6 docs" pinned; it answered "what is proven to run,"
+     not "what is newest." It happens to be the Group 8/9 "9.3" merge.)
+   - **`544b87b`** — **last fully self-contained tree**: serve.py's imports are
+     intact, but it predates the SentryAgent chat/playground/profile features.
+   - **`2ee4813`** — **last commit with serve.py** (parent of the A2a deletion
+     `abb7e0c`/#7): newest features, but the 9.6 refactor `446e627` had already moved
+     `scanner.py` / `leaderboard.json` / `reports/` to `acpsec_api/` + `data/`
+     without repointing serve.py, so three import paths need fixing before it runs.
+   Cross-service refs auto-cleaned (`RAILWAY_SERVICE_WEB_URL` dropped from api-prod).
 3. **RESOLVED (2026-07-27) — the entire staging line is DELETED.** All three
    pieces are gone: the `web-staging` Railway service, the `deploy/staging` git
    branch (remote **and** local), and the `acp-sec-app` Vercel project at
