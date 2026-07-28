@@ -22,9 +22,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
+        # Install from the compiled dev lock (pins base+api+dev to exact
+        # versions, matching the prod lock), then the local package without
+        # touching deps. Reproducible: no re-resolution from pyproject floors.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,api]"
+          pip install -r requirements/dev.txt
+          pip install -e . --no-deps
 
       - name: Run test suite
         # -rs surfaces skip reasons in the log. The ONLY expected skips are the
