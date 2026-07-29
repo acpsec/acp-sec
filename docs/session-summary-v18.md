@@ -85,11 +85,31 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
 
 ## OPEN ITEMS (honest state)
 
-1. **No lockfile → prod builds are not reproducible.** Every build re-resolves
-   from floors. Concrete drift observed: **fastapi 0.139.2 → 0.140.0** between
-   `eb595816` (07-24) and the 07-26 builds — two builds, two days, different
-   fastapi. A lockfile is the fix if reproducibility is wanted; out of scope so
-   far.
+1. **RESOLVED (2026-07-29) — prod builds are now reproducible for runtime deps
+   (compiled lockfile).** Was: no lockfile → every build re-resolved from floors
+   (observed drift: **fastapi 0.139.2 → 0.140.0 → 0.140.7 → 0.140.10** across
+   ungated rebuilds). Fixed across three PRs: **#14** added the compiled locks
+   (`requirements/prod.txt`, base+api, 38 pins; `requirements/dev.txt`, 44);
+   **#15** wired api-prod's buildCommand to `pip install -r requirements/prod.txt
+   && pip install . --no-deps` and added `requirements/prod.txt` to
+   `watchPatterns`; **#16** added a CI step that asserts every prod-lock pin ==
+   the installed version on every run (fails the build otherwise — proven to
+   bite). **Verified in prod:** two consecutive builds on the SAME commit
+   `043a3045` (`1c9db8aa` = the #15 merge, `2abd0c56` = a `railway redeploy`)
+   installed **identical versions across all 38 locked packages** — empty diff.
+   The lock-phase visibly corrects floor drift: build A's auto-phase floated
+   `anthropic 0.120.2`, the lock pinned it back to `0.120.0`.
+   **Scope boundary (honest):** only *runtime* deps are locked. NIXPACKS's
+   auto-phase still floor-resolves **build tooling**
+   (`build`/`setuptools`/`packaging`/`pyproject_hooks`) *before* the lock-phase
+   pins the runtime set on top — that tooling is not covered by the lock (PEP517
+   build infra, not an app import). **Methodology (for whoever re-runs this
+   check):** diff the **lock-phase provenance lines** (`Collecting X==` +
+   `Requirement already satisfied: X==`, both tagged `(from -r
+   requirements/prod.txt)`), **not** the `Successfully installed` lines — build B
+   hit a warm pip cache (222 vs 511 log lines), so a naive `Successfully
+   installed` diff shows spurious differences while the pinned versions are in
+   fact identical.
 2. **RESOLVED (2026-07-27) — the dead `web` (Flask) Railway service is DELETED.**
    Sequence (two steps, not atomic): `acpsec.app`'s custom domain was **detached**
    first (it resolves via Vercel, `216.198.79.1`, so zero downtime), freeing the
@@ -126,6 +146,21 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    ~28s **before** the GitHub Actions run went green (18:11:04Z). A merge to
    `main` deploys api-prod **immediately, ungated** — the manual redeploy is the
    only real safeguard. Don't trust the flag.
+5. **Secrets baked into image layers.** The NIXPACKS-generated Dockerfile passes
+   `LEADERBOARD_PASSWORD` and `SCANNER_TOKEN` as both `ARG` (line 11) and `ENV`
+   (line 12) — every api-prod build log carries `SecretsUsedInArgOrEnv` warnings
+   for both (surfaced 2026-07-29 in the lock-build logs). **Not a public leak**
+   (the image is private), but for a product that audits security it's worth
+   removing: keep those as Railway *runtime* env vars (not baked at build) or use
+   Docker build secrets, so they never enter an image layer.
+6. **Identity hygiene on this machine.** Four identities coexist — gh: `acpsec`
+   (write), `fdlr28`, `claudyaaprilia123-cmd`; Railway: `turkvengeance@gmail.com`
+   (owns `sublime-truth`) and `cryptosun81@gmail.com`. Silent drift twice cost
+   real time: a push **403** (gh active account flipped mid-session) and a
+   **wrong-account Railway session** after a token re-auth (`cryptosun81`, which
+   has no access to the project) — several diagnosis rounds each. Pin per-repo
+   credentials (repo-local gh account; a Railway project token for CI) so the
+   active identity can't drift mid-session.
 
 ## Notes for next session
 - gh CLI active account drifted to `claudyaaprilia123-cmd` (no write access)
