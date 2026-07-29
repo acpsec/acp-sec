@@ -6,19 +6,30 @@
 
 ## Ground truth at v18
 
-- **acp-sec** `main` HEAD: **`aefeaf2`** (#10, "delete root requirements.txt").
+> ⚠️ **Point-in-time snapshot — verify, don't trust.** The HEAD / deployment /
+> test facts in this section are as of **2026-07-29** (re-verified live that day;
+> this section has been amended several times since the 2026-07-26 write). They
+> drift on every merge and redeploy — before relying on any SHA or deployment ID
+> below, re-check it (`git log origin/main -1`, `railway status`) rather than
+> trusting this text.
+
+- **acp-sec** `main` HEAD: **`043a304`** (#15, "wire api-prod to install from the
+  compiled lock") — snapshot-date value; advances on every merge, including this
+  doc's own.
 - **Full pytest suite: 1150 passed / 2 skipped** (flask uninstalled locally,
   mirrors the clean CI runner). The 2 skips are the B20 live-RPC tests
   (skipif-gated on `B20_LIVE_RPC`).
 - **CI:** GitHub Actions pytest gate on push/PR to `main` (`.github/workflows/ci.yml`),
   ubuntu-latest, Python 3.12, `checkout@v7`/`setup-python@v7`, installs
-  **`.[dev,api]` only** (the flask install + `import dashboard.serve` guard were
-  removed in A2a, since the parity tests they supported are gone). Branch
+  **from the compiled dev lock** (`pip install -r requirements/dev.txt` +
+  `pip install -e . --no-deps`, #14) and **asserts every prod-lock pin == the
+  installed version** each run (#16). (Earlier it installed `.[dev,api]`; the
+  flask install + `import dashboard.serve` guard were removed in A2a.) Branch
   protection on `main`: requires the `test` check, strict, no reviews,
   admin-bypass on.
 - **Prod:** Railway project `sublime-truth`, env `production`. `api-prod`
-  (FastAPI, tracks `main`) runs **`aefeaf2`** (deployment `a1091af6`, Online,
-  `/api/health` 200).
+  (FastAPI, tracks `main`) runs commit **`043a3045`** (deployment `2abd0c56`,
+  Online, `/api/health` 200) — snapshot-date value; changes on each deploy/redeploy.
 
 ## Track 1 — Migration Groups 1–9: **COMPLETE**
 
@@ -34,9 +45,10 @@ Final steps this session, all merged to `main`:
 | #9 (A2b-1) | **De-watch** `requirements.txt` from `watchPatterns` in `railway.prod.json` + `railway.staging.json` (file kept). Makes the next deletion deploy-silent. |
 | #10 (A2b-2) | **Delete root `requirements.txt`** (Flask deploy manifest). Deploy-silent (unwatched); validated by a manual `--from-source` redeploy. |
 
-**Result: api-prod runs `aefeaf2` with no Flask stack** — `flask`, `gunicorn`,
-`werkzeug`, `itsdangerous`, `blinker` are gone from the build; deps come from
-`pip install '.[api]'` + pyproject base.
+**Result: api-prod runs with no Flask stack** — `flask`, `gunicorn`, `werkzeug`,
+`itsdangerous`, `blinker` are gone from the build. (At v18 write time deps came
+from `pip install '.[api]'` + pyproject base; as of 2026-07-29 the buildCommand
+is lock-based — see Open-item #1.)
 
 ## Track 2 — Features: **F1 (scan-skill) shipped** (#1)
 
@@ -85,11 +97,31 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
 
 ## OPEN ITEMS (honest state)
 
-1. **No lockfile → prod builds are not reproducible.** Every build re-resolves
-   from floors. Concrete drift observed: **fastapi 0.139.2 → 0.140.0** between
-   `eb595816` (07-24) and the 07-26 builds — two builds, two days, different
-   fastapi. A lockfile is the fix if reproducibility is wanted; out of scope so
-   far.
+1. **RESOLVED (2026-07-29) — prod builds are now reproducible for runtime deps
+   (compiled lockfile).** Was: no lockfile → every build re-resolved from floors
+   (observed drift: **fastapi 0.139.2 → 0.140.0 → 0.140.7 → 0.140.10** across
+   ungated rebuilds). Fixed across three PRs: **#14** added the compiled locks
+   (`requirements/prod.txt`, base+api, 38 pins; `requirements/dev.txt`, 44);
+   **#15** wired api-prod's buildCommand to `pip install -r requirements/prod.txt
+   && pip install . --no-deps` and added `requirements/prod.txt` to
+   `watchPatterns`; **#16** added a CI step that asserts every prod-lock pin ==
+   the installed version on every run (fails the build otherwise — proven to
+   bite). **Verified in prod:** two consecutive builds on the SAME commit
+   `043a3045` (`1c9db8aa` = the #15 merge, `2abd0c56` = a `railway redeploy`)
+   installed **identical versions across all 38 locked packages** — empty diff.
+   The lock-phase visibly corrects floor drift: build A's auto-phase floated
+   `anthropic 0.120.2`, the lock pinned it back to `0.120.0`.
+   **Scope boundary (honest):** only *runtime* deps are locked. NIXPACKS's
+   auto-phase still floor-resolves **build tooling**
+   (`build`/`setuptools`/`packaging`/`pyproject_hooks`) *before* the lock-phase
+   pins the runtime set on top — that tooling is not covered by the lock (PEP517
+   build infra, not an app import). **Methodology (for whoever re-runs this
+   check):** diff the **lock-phase provenance lines** (`Collecting X==` +
+   `Requirement already satisfied: X==`, both tagged `(from -r
+   requirements/prod.txt)`), **not** the `Successfully installed` lines — build B
+   hit a warm pip cache (222 vs 511 log lines), so a naive `Successfully
+   installed` diff shows spurious differences while the pinned versions are in
+   fact identical.
 2. **RESOLVED (2026-07-27) — the dead `web` (Flask) Railway service is DELETED.**
    Sequence (two steps, not atomic): `acpsec.app`'s custom domain was **detached**
    first (it resolves via Vercel, `216.198.79.1`, so zero downtime), freeing the
@@ -118,7 +150,7 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    not see that the **local** `deploy/staging` ref held one unpushed commit — a
    comment-only b20 mainnet-activation fix — which was rescued to `main` via
    **PR #12** *before* the branch was force-deleted. `staging.acpsec.app` is also
-   dropped from the default CORS allowlist (this PR). **There is no staging /
+   dropped from the default CORS allowlist (PR #13). **There is no staging /
    pre-prod rehearsal environment now** — main-targeted changes go straight to
    `api-prod`.
 4. **Railway `checkSuites` reports `true` on api-prod but does NOT gate.**
@@ -126,6 +158,21 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    ~28s **before** the GitHub Actions run went green (18:11:04Z). A merge to
    `main` deploys api-prod **immediately, ungated** — the manual redeploy is the
    only real safeguard. Don't trust the flag.
+5. **Secrets baked into image layers.** The NIXPACKS-generated Dockerfile passes
+   `LEADERBOARD_PASSWORD` and `SCANNER_TOKEN` as both `ARG` (line 11) and `ENV`
+   (line 12) — every api-prod build log carries `SecretsUsedInArgOrEnv` warnings
+   for both (surfaced 2026-07-29 in the lock-build logs). **Not a public leak**
+   (the image is private), but for a product that audits security it's worth
+   removing: keep those as Railway *runtime* env vars (not baked at build) or use
+   Docker build secrets, so they never enter an image layer.
+6. **Identity hygiene on this machine.** Four identities coexist — gh: `acpsec`
+   (write), `fdlr28`, `claudyaaprilia123-cmd`; Railway: `turkvengeance@gmail.com`
+   (owns `sublime-truth`) and `cryptosun81@gmail.com`. Silent drift twice cost
+   real time: a push **403** (gh active account flipped mid-session) and a
+   **wrong-account Railway session** after a token re-auth (`cryptosun81`, which
+   has no access to the project) — several diagnosis rounds each. Pin per-repo
+   credentials (repo-local gh account; a Railway project token for CI) so the
+   active identity can't drift mid-session.
 
 ## Notes for next session
 - gh CLI active account drifted to `claudyaaprilia123-cmd` (no write access)
@@ -133,6 +180,7 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
   git authorship stayed correct (`acpsec <turkvengeance@gmail.com>`) throughout.
   UI merge failures were incomplete "Confirm squash and merge" clicks, NOT
   permissions.
-- Railway CLI is authenticated (`acpsec`) and the repo is linked to project
-  `sublime-truth` — read-only queries (deployments, `repoTriggers`, build logs)
-  work directly.
+- Railway CLI auth drifts across accounts (see Open-item #6); a re-auth cleared
+  the project link (`railway status` → "No linked project found"). Pass
+  `-p <project> -e production -s api-prod` explicitly on `railway` commands (or
+  re-run `railway link`) rather than assuming a linked project.
