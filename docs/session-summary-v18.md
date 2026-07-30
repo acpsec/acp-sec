@@ -201,6 +201,44 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    has no access to the project) — several diagnosis rounds each. Pin per-repo
    credentials (repo-local gh account; a Railway project token for CI) so the
    active identity can't drift mid-session.
+7. **SentryAgent chat is DEAD in prod (verified 2026-07-30) — and gating must
+   precede the fix.** `ANTHROPIC_API_KEY` is unset on api-prod, so
+   `POST /api/chat/sentryagent` returns **503** (`AI chat not configured`) — env
+   is checked before any Claude call (`chat.py:77`). **Not a migration
+   regression:** the 2026-07-16 web-stop audit shows the key was **Unset on the
+   old Flask `web` too** (chat 503 there as well); 9B set the other two secrets on
+   api-prod but missed this one, so it has been 503 the whole time on both stacks.
+   - **User-reachable:** `acpsec.app/agents/sentryagent` is live (HTTP 200) and
+     wired to the endpoint (`src/app/agents/sentryagent/page.tsx` → `useChat` →
+     `chatSentryAgent` → `POST /api/chat/sentryagent`), so real visitors hit the
+     broken chat. `docs/prod-env-inventory.md` lists the key as **required** in
+     prod — the intent was "chat on."
+   - **⚠️ The endpoint is UNGATED.** Unlike `/api/scanner/*` and `/api/onchain/*`
+     (which use `Depends(require_scanner_access)`), chat has **no auth gate** —
+     only `Depends(get_anthropic_client)`. CORS is browser-enforced only (a
+     `curl`/script ignores it), and the frontend's `X-Scanner-Token` is added only
+     for the `/api/scanner/` + `/api/onchain/` prefixes, **not** chat. There is
+     **no rate limiting** anywhere. So setting the key on the endpoint as-is makes
+     it a **public, ungated Claude proxy — anyone can loop it and drain credits.**
+   - **Per-call cost IS bounded** (model pinned `claude-sonnet-4-6`, `max_tokens`
+     1024, history capped to 20 messages × 4000 chars) — a single call is cheap;
+     the unbounded axis is **call volume**.
+   - **Lightest bound (reuses existing code):** add `Depends(require_scanner_access)`
+     to the chat route (backend one-liner) **and** add `/api/chat/` to the
+     frontend's `SCANNER_TOKEN_PREFIXES` in `client.ts` (frontend one-liner) so the
+     browser keeps working. ⚠️ Caveat: `NEXT_PUBLIC_SCANNER_TOKEN` is **public**
+     (inlined in the client bundle), so this is a **speed-bump** — it stops
+     anonymous `curl` abuse but a determined caller can read the token from the
+     bundle and replay it. Real cost protection needs per-IP rate limiting (not in
+     the codebase) or proper auth.
+   - **The fix is Fadhlan's** (needs a prod-scoped Anthropic key), and the endpoint
+     should be **gated first** — or the `/agents/sentryagent` entry point hidden if
+     chat isn't meant to be live.
+   - **Testing lesson:** the golden-contract tests (A1) could not catch this —
+     "503 when `ANTHROPIC_API_KEY` unset" **is** the contract they froze (`chat.py`
+     mirrors Flask's 503 exactly). A frozen contract verifies the code path, not
+     whether the prod environment satisfies its precondition; catching this needs
+     an env-presence / live-smoke check, a different class of test.
 
 ## Notes for next session
 - gh CLI active account drifted to `claudyaaprilia123-cmd` (no write access)
