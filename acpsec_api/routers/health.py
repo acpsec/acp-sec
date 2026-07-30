@@ -4,7 +4,13 @@ Contract-identical port of the Flask liveness probe in dashboard/serve.py.
 Used by Railway healthchecks and uptime monitors.
 
 Response (status 200):
-    {ok, service, acpsec_available, scanner_protected}
+    {ok, service, acpsec_available, scanner_protected,
+     anthropic_configured, leaderboard_configured}
+
+The `*_configured` booleans report whether a required prod secret is present
+(never the value) so an env-precondition smoke check can catch a missing var —
+the failure class behind the SentryAgent chat sitting dead in prod. Same idiom
+as `scanner_protected`.
 """
 
 from __future__ import annotations
@@ -26,4 +32,6 @@ def health() -> dict[str, object]:
         "service": "acp-sec-dashboard",
         "acpsec_available": bool(ACPSEC_AVAILABLE),
         "scanner_protected": bool(os.environ.get("SCANNER_TOKEN")),
+        "anthropic_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "leaderboard_configured": bool(os.environ.get("LEADERBOARD_PASSWORD")),
     }

@@ -1,0 +1,67 @@
+name: prod-smoke
+
+# Weekly env-PRECONDITION check for api-prod. Catches CONFIG DRIFT — a required
+# prod secret going missing — the failure class that left the SentryAgent chat
+# dead for weeks. NOT an uptime monitor: it reads booleans from /api/health only,
+# makes no paid or side-effecting calls (no live chat POST).
+on:
+  schedule:
+    - cron: "0 8 * * 1"      # Mondays 08:00 UTC (weekly)
+  workflow_dispatch: {}       # on-demand
+
+permissions:
+  contents: read
+  issues: write               # to open a tracking issue on failure (loud, config-independent)
+
+jobs:
+  env-preconditions:
+    runs-on: ubuntu-latest
+    if: github.repository == 'acpsec/acp-sec'   # don't run on forks
+    steps:
+      - name: Assert prod /api/health required booleans are true
+        id: check
+        run: |
+          set -euo pipefail
+          URL="https://api-prod-production-7ef5.up.railway.app/api/health"
+          body="$(curl -fsS --retry 3 --retry-delay 5 --max-time 20 "$URL")"
+          echo "health = $body"
+          fail=""
+          for key in acpsec_available scanner_protected anthropic_configured leaderboard_configured; do
+            v="$(printf '%s' "$body" | jq -r --arg k "$key" '.[$k]')"
+            [ "$v" = "true" ] || fail="$fail $key=$v"
+          done
+          if [ -n "$fail" ]; then
+            echo "detail=$fail" >> "$GITHUB_OUTPUT"
+            echo "::error::prod env preconditions FAILED:$fail"
+            exit 1
+          fi
+          echo "all prod env preconditions satisfied"
+
+      - name: Open/append a tracking issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          DETAIL: ${{ steps.check.outputs.detail }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = "🔴 prod env precondition failed (prod-smoke)";
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const detail = process.env.DETAIL || "(endpoint unreachable or non-200 — see run log)";
+            const body = [
+              "The weekly prod env-precondition check failed.",
+              "",
+              "**Failing:**" + detail,
+              "",
+              "A required prod secret is likely missing/empty on api-prod — check " +
+                "`ANTHROPIC_API_KEY`, `LEADERBOARD_PASSWORD`, `SCANNER_TOKEN` (values are never logged).",
+              "",
+              `Run: ${runUrl}`,
+            ].join("\n");
+            const open = await github.rest.issues.listForRepo({ owner, repo, state: "open", per_page: 100 });
+            const existing = open.data.find((i) => i.title === title && !i.pull_request);
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
