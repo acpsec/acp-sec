@@ -193,16 +193,28 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    warnings for `LEADERBOARD_PASSWORD`/`SCANNER_TOKEN` are real, but the fix
    proposed here — "keep as runtime env / use Docker build secrets" — overstated
    what Railway supports natively.)*
-6. **Identity hygiene on this machine.** Four identities coexist — gh: `acpsec`
-   (write), `fdlr28`, `claudyaaprilia123-cmd`; Railway: `turkvengeance@gmail.com`
-   (owns `sublime-truth`) and `cryptosun81@gmail.com`. Silent drift twice cost
-   real time: a push **403** (gh active account flipped mid-session) and a
-   **wrong-account Railway session** after a token re-auth (`cryptosun81`, which
-   has no access to the project) — several diagnosis rounds each. Pin per-repo
-   credentials (repo-local gh account; a Railway project token for CI) so the
-   active identity can't drift mid-session.
-7. **SentryAgent chat is DEAD in prod (verified 2026-07-30) — and gating must
-   precede the fix.** `ANTHROPIC_API_KEY` is unset on api-prod, so
+6. **RESOLVED (2026-07-30) — identity hygiene.** Four identities coexist (gh:
+   `acpsec`/`fdlr28`/`claudyaaprilia123-cmd`; Railway: `turkvengeance` /
+   `cryptosun81`), all in active use — drift is structural, so **pinned rather than
+   removed**. What actually shipped (superseding the original "repo-local gh /
+   Railway CI token" guess):
+   - **acp-sec push pinned via SSH host-alias** `github-acpsec` → key
+     `~/.ssh/id_ed25519_acpsec`, independent of gh's active account **by
+     construction** (SSH bypasses the credential helper; verified with gh switched
+     to `fdlr28`). Rollback: `git remote set-url origin https://github.com/acpsec/acp-sec.git`.
+   - **gh operations still follow the active account** — no per-repo gh pin exists
+     (gh config is global-only; `GH_TOKEN`/`GH_CONFIG_DIR` rejected). Pre-flight =
+     the `git who` global alias (prints `git author | gh active`).
+   - **Global git identity cleared + `user.useConfigOnly=true`** → repos without an
+     explicit local identity **hard-refuse** commits. (Clearing global alone was
+     NOT enough — git auto-detected `Fadhlan@hostname`; `useConfigOnly` forces the
+     refusal.) acpsec-family + hoodstate pinned; fdlr28 repos deliberately left to
+     refuse until pinned to a fdlr28 email.
+   - The Railway **project-token-for-CI** idea was **dropped** (this repo's CI
+     doesn't use the Railway CLI; a prod-scoped token in a profile isn't worth it).
+     Full detail: the `identity-git-push-pinning` memory.
+7. **SentryAgent chat is DEAD in prod (verified 2026-07-30) — an upstream spend
+   cap is the real bound.** `ANTHROPIC_API_KEY` is unset on api-prod, so
    `POST /api/chat/sentryagent` returns **503** (`AI chat not configured`) — env
    is checked before any Claude call (`chat.py:77`). **Not a migration
    regression:** the 2026-07-16 web-stop audit shows the key was **Unset on the
@@ -231,9 +243,22 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
      anonymous `curl` abuse but a determined caller can read the token from the
      bundle and replay it. Real cost protection needs per-IP rate limiting (not in
      the codebase) or proper auth.
-   - **The fix is Fadhlan's** (needs a prod-scoped Anthropic key), and the endpoint
-     should be **gated first** — or the `/agents/sentryagent` entry point hidden if
-     chat isn't meant to be live.
+   - **The real spend bound is UPSTREAM, not the app gate (verified 2026-07-30).**
+     The Anthropic Console supports **per-Workspace monthly spend limits + per-Workspace
+     rate limits** (RPM/ITPM/OTPM) — a key created in a dedicated **non-default**
+     Workspace is hard-capped by them regardless of the app ("API usage pauses"
+     once the cap is hit); the tier also carries an org-wide monthly spend cap
+     (Start = $500). And **nothing upstream limits request volume:** the frontend
+     calls Railway **directly** (`NEXT_PUBLIC_API_URL`; no `vercel.json`/next
+     rewrite), and Railway exposes no rate-limit knob. **So the sequence inverts to:
+     set a Workspace spend+rate cap → set the key in that Workspace → gate at
+     leisure** — the scanner-token gate (and/or slowapi) become defense-in-depth,
+     not the sole bound. The fix is Fadhlan's (prod-scoped key); or hide
+     `/agents/sentryagent` if chat isn't meant to be live. *slowapi* is feasible for
+     the app-side limit (FastAPI-native; the chat route already takes
+     `request: Request`; in-memory storage is fine for the single Railway replica —
+     needs Redis if scaled, and an `X-Forwarded-For` `key_func` to see real client
+     IPs behind Railway's proxy), but it touches the lockfile (recompile).
    - **Testing lesson:** the golden-contract tests (A1) could not catch this —
      "503 when `ANTHROPIC_API_KEY` unset" **is** the contract they froze (`chat.py`
      mirrors Flask's 503 exactly). A frozen contract verifies the code path, not
