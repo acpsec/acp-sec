@@ -213,18 +213,31 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    - The Railway **project-token-for-CI** idea was **dropped** (this repo's CI
      doesn't use the Railway CLI; a prod-scoped token in a profile isn't worth it).
      Full detail: the `identity-git-push-pinning` memory.
-7. **SentryAgent chat is DEAD in prod (verified 2026-07-30) — an upstream spend
-   cap is the real bound.** `ANTHROPIC_API_KEY` is unset on api-prod, so
-   `POST /api/chat/sentryagent` returns **503** (`AI chat not configured`) — env
-   is checked before any Claude call (`chat.py:77`). **Not a migration
-   regression:** the 2026-07-16 web-stop audit shows the key was **Unset on the
-   old Flask `web` too** (chat 503 there as well); 9B set the other two secrets on
-   api-prod but missed this one, so it has been 503 the whole time on both stacks.
+7. **RESOLVED (2026-07-30) — SentryAgent chat is LIVE behind a capped Workspace
+   key; endpoint still UNGATED (app-side limiting deferred).** `ANTHROPIC_API_KEY`
+   is now set on api-prod — a **paid Anthropic key in a dedicated Workspace with a
+   monthly spend limit + rate limits** (the real spend bound). Verified live:
+   `POST /api/chat/sentryagent` → **200** with a real reply, container restarted to
+   pick up the runtime `os.environ` value. **Virtuals Spark-Tier credits ($200/wk)
+   were evaluated and DELIBERATELY NOT used:** they are a **proxy gateway**
+   (`compute.virtuals.io/v1`, not a native key — the Anthropic SDK does read
+   `ANTHROPIC_BASE_URL`, so it *could* work only if the gateway speaks the Messages
+   API), the handler **502s on a gateway/credit lapse**, and the program **ends
+   2026-08-27** — wiring a public prod endpoint to a 4-week-expiring proxy would
+   *schedule* the next silent breakage; the credits are meant for agent dev, not a
+   prod endpoint. **History (how it surfaced):** the key was unset, so chat returned
+   **503** (`AI chat not configured`; env checked before any Claude call,
+   `chat.py:77`) — **not a migration regression:** the 2026-07-16 web-stop audit
+   shows it was **Unset on the old Flask `web` too**; 9B set the other two secrets
+   but missed this one, so it was 503 the whole time on both stacks. (Setup gotcha:
+   the var was first added twice under wrong *names* — `acpsec-prod`, then
+   `api-prod` — before landing as exactly `ANTHROPIC_API_KEY`; the app reads the
+   exact name, `deps.py:117`.)
    - **User-reachable:** `acpsec.app/agents/sentryagent` is live (HTTP 200) and
      wired to the endpoint (`src/app/agents/sentryagent/page.tsx` → `useChat` →
-     `chatSentryAgent` → `POST /api/chat/sentryagent`), so real visitors hit the
-     broken chat. `docs/prod-env-inventory.md` lists the key as **required** in
-     prod — the intent was "chat on."
+     `chatSentryAgent` → `POST /api/chat/sentryagent`), so real visitors hit it
+     (broken until the key was set on 2026-07-30). `docs/prod-env-inventory.md`
+     lists the key as **required** in prod — the intent was "chat on."
    - **⚠️ The endpoint is UNGATED.** Unlike `/api/scanner/*` and `/api/onchain/*`
      (which use `Depends(require_scanner_access)`), chat has **no auth gate** —
      only `Depends(get_anthropic_client)`. CORS is browser-enforced only (a
@@ -253,8 +266,9 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
      rewrite), and Railway exposes no rate-limit knob. **So the sequence inverts to:
      set a Workspace spend+rate cap → set the key in that Workspace → gate at
      leisure** — the scanner-token gate (and/or slowapi) become defense-in-depth,
-     not the sole bound. The fix is Fadhlan's (prod-scoped key); or hide
-     `/agents/sentryagent` if chat isn't meant to be live. *slowapi* is feasible for
+     not the sole bound. **Done (2026-07-30):** a prod-scoped key set in a capped
+     Workspace (chat live; Virtuals credits declined); the app-side gate stays
+     deferred defense-in-depth. *slowapi* is feasible for
      the app-side limit (FastAPI-native; the chat route already takes
      `request: Request`; in-memory storage is fine for the single Railway replica —
      needs Redis if scaled, and an `X-Forwarded-For` `key_func` to see real client
