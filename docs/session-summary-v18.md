@@ -158,13 +158,41 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    ~28s **before** the GitHub Actions run went green (18:11:04Z). A merge to
    `main` deploys api-prod **immediately, ungated** — the manual redeploy is the
    only real safeguard. Don't trust the flag.
-5. **Secrets baked into image layers.** The NIXPACKS-generated Dockerfile passes
-   `LEADERBOARD_PASSWORD` and `SCANNER_TOKEN` as both `ARG` (line 11) and `ENV`
-   (line 12) — every api-prod build log carries `SecretsUsedInArgOrEnv` warnings
-   for both (surfaced 2026-07-29 in the lock-build logs). **Not a public leak**
-   (the image is private), but for a product that audits security it's worth
-   removing: keep those as Railway *runtime* env vars (not baked at build) or use
-   Docker build secrets, so they never enter an image layer.
+5. **Secrets baked into image layers — INVESTIGATED (2026-07-30), accepted as a
+   low-severity residual.** The original framing (below) was partly wrong; what
+   the investigation actually found:
+   - **It's the mechanism, not those two names.** NIXPACKS emits a single `ARG`
+     (line 11) + `ENV` (line 12) block for *every* variable Railway passes to the
+     build; the Docker linter's `SecretsUsedInArgOrEnv` only *warns* on names
+     matching its secret heuristic (password/token), so only `LEADERBOARD_PASSWORD`
+     and `SCANNER_TOKEN` are flagged — while `CORS_ALLOWED_ORIGINS` + the 11
+     `RAILWAY_*` vars are baked the same way, just unflagged (non-secret names).
+   - **Values persist in the final image, not a traceless build-time ARG.** The
+     build is single-stage (`stage-0` only), so the `ENV` at line 12 is in the
+     final image config — retrievable via `docker inspect` by anyone with pull
+     access to Railway's **private** registry. (Determined structurally from the
+     Dockerfile shape; NOT verified by pulling the private image.)
+   - **Railway has NO native build-vs-runtime variable scoping** (CLI-confirmed:
+     `railway variable` is only list/set/delete; no sealed / build-exclude flag),
+     and `railway.prod.json` has no `build.args`. So the original note — "keep them
+     as Railway *runtime* env vars, not baked at build" — **was wrong: that control
+     does not exist.** The only real fix is a custom Dockerfile with BuildKit
+     build-secrets, which abandons NIXPACKS and unwinds the lockfile buildCommand.
+   - **The build doesn't need them:** all three reads are runtime handlers
+     (`leaderboard.py`, `health.py`, `scanner_auth.py`, via `os.environ`); the
+     buildCommand (`pip install …`) and the setuptools backend read neither.
+   - **Decision: accepted as a low-severity residual.** Marginal exposure is
+     near-zero — anyone who can pull the image can already read the variables in
+     the Railway dashboard. The one real residual: **stale values persist in old
+     image history after a rotation.** So *if an image is ever treated as
+     compromised, rotate BOTH secrets AND prune the old images* — runtime reads,
+     so a Railway **restart** applies new values (not a rebuild), keeping
+     `SCANNER_TOKEN` in lockstep with the frontend's `NEXT_PUBLIC_SCANNER_TOKEN`.
+
+   *(Original framing, kept for the record — the ARG/ENV `SecretsUsedInArgOrEnv`
+   warnings for `LEADERBOARD_PASSWORD`/`SCANNER_TOKEN` are real, but the fix
+   proposed here — "keep as runtime env / use Docker build secrets" — overstated
+   what Railway supports natively.)*
 6. **Identity hygiene on this machine.** Four identities coexist — gh: `acpsec`
    (write), `fdlr28`, `claudyaaprilia123-cmd`; Railway: `turkvengeance@gmail.com`
    (owns `sublime-truth`) and `cryptosun81@gmail.com`. Silent drift twice cost
