@@ -7,15 +7,15 @@
 ## Ground truth at v18
 
 > ⚠️ **Point-in-time snapshot — verify, don't trust.** The HEAD / deployment /
-> test facts in this section are as of **2026-07-29** (re-verified live that day;
+> test facts in this section are as of **2026-07-30** (re-verified live that day;
 > this section has been amended several times since the 2026-07-26 write). They
 > drift on every merge and redeploy — before relying on any SHA or deployment ID
 > below, re-check it (`git log origin/main -1`, `railway status`) rather than
 > trusting this text.
 
-- **acp-sec** `main` HEAD: **`043a304`** (#15, "wire api-prod to install from the
-  compiled lock") — snapshot-date value; advances on every merge, including this
-  doc's own.
+- **acp-sec** `main` HEAD: **`03faf54`** (#21, "add anthropic_configured +
+  leaderboard_configured; weekly prod-smoke") — snapshot-date value; advances on
+  every merge, including this doc's own.
 - **Full pytest suite: 1150 passed / 2 skipped** (flask uninstalled locally,
   mirrors the clean CI runner). The 2 skips are the B20 live-RPC tests
   (skipif-gated on `B20_LIVE_RPC`).
@@ -28,8 +28,9 @@
   protection on `main`: requires the `test` check, strict, no reviews,
   admin-bypass on.
 - **Prod:** Railway project `sublime-truth`, env `production`. `api-prod`
-  (FastAPI, tracks `main`) runs commit **`043a3045`** (deployment `2abd0c56`,
-  Online, `/api/health` 200) — snapshot-date value; changes on each deploy/redeploy.
+  (FastAPI, tracks `main`) runs commit **`03faf54`** (deployment `c5e78faf`,
+  Online, `/api/health` 200 — now the extended shape) — snapshot-date value;
+  changes on each deploy/redeploy.
 
 ## Track 1 — Migration Groups 1–9: **COMPLETE**
 
@@ -153,11 +154,14 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    dropped from the default CORS allowlist (PR #13). **There is no staging /
    pre-prod rehearsal environment now** — main-targeted changes go straight to
    `api-prod`.
-4. **Railway `checkSuites` reports `true` on api-prod but does NOT gate.**
-   Verified empirically: for `abb7e0c` the Railway build started 18:10:36Z,
-   ~28s **before** the GitHub Actions run went green (18:11:04Z). A merge to
-   `main` deploys api-prod **immediately, ungated** — the manual redeploy is the
-   only real safeguard. Don't trust the flag.
+4. **PERMANENT CAVEAT (not a task) — Railway `checkSuites` reports `true` on
+   api-prod but does NOT gate.** This is a standing operational fact about how
+   Railway deploys this service, **not unfinished work** — it belongs with the
+   "don't trust this flag" notes, kept numbered here only so cross-references
+   don't shift. Verified empirically: for `abb7e0c` the Railway build started
+   18:10:36Z, ~28s **before** the GitHub Actions run went green (18:11:04Z). A
+   merge to `main` deploys api-prod **immediately, ungated** — treat every merge
+   to `main` as a deploy; the manual redeploy / awareness is the only safeguard.
 5. **Secrets baked into image layers — INVESTIGATED (2026-07-30), accepted as a
    low-severity residual.** The original framing (below) was partly wrong; what
    the investigation actually found:
@@ -273,11 +277,19 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
      `request: Request`; in-memory storage is fine for the single Railway replica —
      needs Redis if scaled, and an `X-Forwarded-For` `key_func` to see real client
      IPs behind Railway's proxy), but it touches the lockfile (recompile).
-   - **Testing lesson:** the golden-contract tests (A1) could not catch this —
-     "503 when `ANTHROPIC_API_KEY` unset" **is** the contract they froze (`chat.py`
-     mirrors Flask's 503 exactly). A frozen contract verifies the code path, not
-     whether the prod environment satisfies its precondition; catching this needs
-     an env-presence / live-smoke check, a different class of test.
+   - **Testing lesson → FIXED (2026-07-30).** The golden-contract tests (A1) could
+     not catch this — "503 when `ANTHROPIC_API_KEY` unset" **is** the contract they
+     froze (`chat.py` mirrors Flask's 503 exactly). A frozen contract verifies the
+     code path, not whether the prod environment satisfies its precondition — a
+     different class of test. **That check now exists** (#21): `/api/health` reports
+     `anthropic_configured` / `leaderboard_configured` booleans (presence only,
+     never the value), and **`.github/workflows/prod-smoke.yml`** (weekly Mon 08:00
+     UTC + `workflow_dispatch`) asserts the required booleans against live prod and
+     **opens an issue on failure** so a red run isn't silent — proven by a dispatch
+     run that passed post-deploy. **Scope:** backend vars only — the frontend
+     `NEXT_PUBLIC_*` vars live on Vercel and are **build-inlined**, so a backend
+     health check can't see them; catching a missing frontend var needs a separate
+     frontend smoke (page-load / Playwright).
 
 ## Notes for next session
 - gh CLI active account drifted to `claudyaaprilia123-cmd` (no write access)
