@@ -217,8 +217,9 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
    - The Railway **project-token-for-CI** idea was **dropped** (this repo's CI
      doesn't use the Railway CLI; a prod-scoped token in a profile isn't worth it).
      Full detail: the `identity-git-push-pinning` memory.
-7. **RESOLVED (2026-07-30) — SentryAgent chat is LIVE behind a capped Workspace
-   key; endpoint still UNGATED (app-side limiting deferred).** `ANTHROPIC_API_KEY`
+7. **RESOLVED — SentryAgent chat is LIVE (2026-07-30) behind a capped Workspace key;
+   the ungated endpoint's app-side gate is ACCEPTED-WITH-MONITORING (2026-07-31, NOT
+   built — see the DECISION bullet).** `ANTHROPIC_API_KEY`
    is now set on api-prod — a **paid Anthropic key in a dedicated Workspace with a
    monthly spend limit + rate limits** (the real spend bound). Verified live:
    `POST /api/chat/sentryagent` → **200** with a real reply, container restarted to
@@ -271,8 +272,8 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
      set a Workspace spend+rate cap → set the key in that Workspace → gate at
      leisure** — the scanner-token gate (and/or slowapi) become defense-in-depth,
      not the sole bound. **Done (2026-07-30):** a prod-scoped key set in a capped
-     Workspace (chat live; Virtuals credits declined); the app-side gate stays
-     deferred defense-in-depth. *slowapi* is feasible for
+     Workspace (chat live; Virtuals credits declined); the app-side gate is now
+     **accepted-with-monitoring, not built** — see the DECISION bullet. *slowapi* is feasible for
      the app-side limit (FastAPI-native; the chat route already takes
      `request: Request`; in-memory storage is fine for the single Railway replica —
      needs Redis if scaled, and an `X-Forwarded-For` `key_func` to see real client
@@ -290,6 +291,30 @@ A2b-2 was not assumed — it was validated live on `api-prod`:
      `NEXT_PUBLIC_*` vars live on Vercel and are **build-inlined**, so a backend
      health check can't see them; catching a missing frontend var needs a separate
      frontend smoke (page-load / Playwright).
+   - **DECISION (2026-07-31) — app-side gate CLOSED as ACCEPTED-WITH-MONITORING, not
+     built.** Measured first: the **`acpsecprod` Workspace** shows **$0.01 of a
+     $5.00/month spend cap** used (our own verification POSTs — no external caller has
+     found the endpoint), **auto-reload OFF**, and a **$12.74 credit balance** as a
+     natural hard stop (the **$1,000** on the dashboard card is the *org-level* limit, a
+     separate layer). Railway HTTP logs over the active deployment's lifetime show **zero
+     `/api/chat/sentryagent` requests** and no organic traffic (only health checks).
+     **Why not build the gate:**
+     - the only available gate (scanner token) is a **speed bump** by our own analysis —
+       `NEXT_PUBLIC_SCANNER_TOKEN` is inlined in the client bundle, so it stops casual
+       `curl` but **not** a determined caller who reads the token out of the bundle;
+     - building it costs a **lockfile recompile + new surface** (slowapi) for a threat
+       with **zero observed traffic**;
+     - the **real bound is upstream and verified in place** — Workspace **$5/month spend
+       cap + per-model rate limits, auto-reload off** — a hard ceiling regardless of the app;
+     - the **weekly prod-smoke guard** already covers the config-drift failure class.
+     **Triggers that REVERSE this — build the gate AND per-IP rate limiting if any occur:**
+     (a) Console usage rises beyond what Fadhlan can account for; (b) the **$5 Workspace
+     cap is ever reached**; (c) `/api/chat/sentryagent` appears in Railway HTTP logs from
+     **IPs/UAs that are not the `acpsec.app` frontend** (Origin/referer, not scripted).
+     **Measurement limitation (recorded honestly):** Railway retains HTTP logs only for
+     the **active deployment's lifetime** (~18h at the time of this check), so traffic
+     history **cannot be reconstructed across deploys**. The **Anthropic Console
+     (Workspace usage + spend) is the durable signal** for this endpoint — not Railway logs.
 
 ## Notes for next session
 - gh CLI active account drifted to `claudyaaprilia123-cmd` (no write access)
