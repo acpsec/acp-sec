@@ -8,16 +8,10 @@ def _inp(**kw) -> ScanInputs:
     return ScanInputs(token="0xB200", chain_id=8453, **kw)
 
 
-def test_non_official_factory_severely_penalized():
-    r = run_variant_config(_inp(variant="ASSET", decimals=18, factory_is_official=False))
-    assert r.name == "variant_config"
-    assert r.weight == 0.15
-    assert r.score <= 50
-    assert any("factory" in f.detail.lower() for f in r.findings)
-
-
 def test_asset_with_valid_decimals_scores_full():
     r = run_variant_config(_inp(variant="ASSET", decimals=18, factory_is_official=True))
+    assert r.name == "variant_config"
+    assert r.weight == 0.15
     assert r.rated is True
     assert r.score == 100
 

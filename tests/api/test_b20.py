@@ -156,6 +156,24 @@ def test_b20_unavailable_returns_400_not_b20():
     assert "not a B20 token" in body["detail"]
 
 
+def test_isb20_false_refusal_returns_400_not_b20_with_enriched_detail():
+    # End-to-end via the REAL read_token against a FakeRpc where the official
+    # factory reports isB20 == false. Contract stays 400 / not_b20; the detail now
+    # explains the cause (B20 security reads do not apply), not a bare flag.
+    from tests.b20.conftest import FakeRpc
+
+    fake = FakeRpc(8453).set_is_b20(ADDR, False)
+    c = make_client(rpc_factory=lambda cid: fake)  # default read_fn = real read_token
+    r = _post(c)
+    assert r.status_code == 400                      # status unchanged
+    body = r.json()
+    assert set(body.keys()) == {"error", "detail"}
+    assert body["error"] == "not_b20"               # error code unchanged
+    detail = body["detail"].lower()
+    assert "not a b20" in detail                     # cause named
+    assert "do not apply" in detail or "security" in detail  # the enrichment
+
+
 # --- single-payload multi-layer contract ----------------------------------
 def test_one_response_serves_all_three_layers():
     c = make_client(read_fn=fake_read(good_inputs()))

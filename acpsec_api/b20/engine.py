@@ -15,7 +15,6 @@ from .models import DimensionResult, IssuerPowers, ScanInputs, ScanResult
 
 # Stable critical-reason identifiers (prefix : human-readable detail).
 CRITICAL_UNCAPPED_MINT = "uncapped_mint: supply cap equals type(uint128).max (infinite mint)"
-CRITICAL_NON_OFFICIAL_FACTORY = "non_official_factory: token not deployed via the official B20 factory"
 CRITICAL_SINGLE_EOA_ADMIN = "single_eoa_admin: DEFAULT_ADMIN_ROLE held by a single EOA without multisig"
 
 
@@ -32,11 +31,10 @@ def detect_critical(inputs: ScanInputs) -> list[str]:
     if inputs.supply_cap is not None and inputs.supply_cap == UINT128_MAX:
         reasons.append(CRITICAL_UNCAPPED_MINT)
 
-    # (b) Not deployed via the exact official factory.
-    if inputs.factory_is_official is False:
-        reasons.append(CRITICAL_NON_OFFICIAL_FACTORY)
-
-    # (c) Single-EOA admin without multisig.
+    # (b) Single-EOA admin without multisig. (A non-official factory is refused
+    # upstream in read_token — factory.isB20 == false raises B20Unavailable — so
+    # factory_is_official reaching here is only True or None; there is no
+    # non-official-factory critical to assert.)
     if (
         inputs.admin_holders is not None
         and len(inputs.admin_holders) == 1
