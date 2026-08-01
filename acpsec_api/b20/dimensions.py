@@ -1,9 +1,13 @@
 """The five B20 Trust Score dimensions (pure, no I/O).
 
 Each ``run_*`` reads a source-agnostic ``ScanInputs`` and returns a
-``DimensionResult`` scored from 100 down. A dimension is ``rated=False`` when
-none of its inputs could be read (all None); the engine then excludes it from
-the weighted sum and applies the unrated multiplier.
+``DimensionResult`` scored from 100 down. A dimension is ``rated=False`` when a
+*load-bearing* input — the signal a High/critical finding turns on — could not
+be read; a readable secondary sibling does NOT keep it rated (guarding against
+the "absent -> infer" bug where a failed read is silently scored as a pass).
+Each ``run_*`` documents its load-bearing input(s) inline. The engine then
+excludes an unrated dimension from the weighted sum and applies the unrated
+multiplier.
 
 Penalty magnitudes are V1 judgment within the brief's high/medium/low bands and
 are kept as named locals for easy tuning.
@@ -37,10 +41,13 @@ def run_issuer_authority(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    rated = any(v is not None for v in (
-        inp.admin_roles_revoked, inp.admin_is_multisig,
-        inp.admin_holders, inp.pause_role_holders,
-    ))
+    # Load-bearing: the admin governance posture. The dominant single-EOA-admin
+    # High (and the single-EOA-admin critical) turns on admin_is_multisig;
+    # admin_roles_revoked=True is the clean-clear. Knowing only the holder count
+    # (admin_holders) or the pause sub-signal cannot place the token on the
+    # revoked > multisig > single-EOA ladder — so a readable sibling must NOT
+    # keep the dimension rated when the governance posture itself is unknown.
+    rated = inp.admin_is_multisig is not None or inp.admin_roles_revoked is not None
 
     # Admin governance quality: revoked (best) > multisig > single/EOA (worst).
     if inp.admin_roles_revoked is True:
@@ -69,9 +76,11 @@ def run_supply_integrity(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    rated = any(v is not None for v in (
-        inp.supply_cap, inp.multiplier_active, inp.burn_enabled,
-    ))
+    # Load-bearing: supply_cap (the uncapped-mint High + critical driver). A None
+    # here cannot be inferred safe, so the dimension is unrated regardless of the
+    # secondary multiplier/burn signals. Note multiplier_active is legitimately
+    # None for stablecoins (no rebasing multiplier), so it must NOT gate rating.
+    rated = inp.supply_cap is not None
 
     if inp.supply_cap is not None and inp.supply_cap == UINT128_MAX:
         # High band: uncapped supply lets the issuer dilute holders without limit
@@ -99,10 +108,17 @@ def run_transfer_policy(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    rated = any(v is not None for v in (
-        inp.policy_registry_active, inp.can_freeze, inp.can_seize, inp.can_pause,
-        inp.is_paused, inp.memo_required, inp.asymmetric_policy,
-    ))
+    # Load-bearing: the coercive-power capabilities plus the live pause state.
+    # can_freeze + can_seize drive the freeze+seize High; is_paused drives the
+    # "currently paused" High. A None in any of the three silently drops a High
+    # finding (the observed live is_paused=None case), so all three must be known
+    # for the dimension to be rated. The rest (policy_registry_active, can_pause,
+    # memo_required, asymmetric_policy) are Medium/Low add-ons, not load-bearing.
+    rated = (
+        inp.can_freeze is not None
+        and inp.can_seize is not None
+        and inp.is_paused is not None
+    )
 
     freeze = inp.can_freeze is True
     seize = inp.can_seize is True
@@ -156,10 +172,11 @@ def run_variant_config(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    rated = any(v is not None for v in (
-        inp.variant, inp.decimals, inp.currency_code,
-        inp.factory_is_official, inp.deployed_via_factory,
-    ))
+    # Load-bearing: factory_is_official (the non-official-factory High + critical
+    # driver — a spoofed / unrecognized deployment). variant/decimals/currency
+    # are config-quality Mediums that presuppose an official token, so a readable
+    # variant must NOT clear a missing factory check.
+    rated = inp.factory_is_official is not None
 
     if inp.factory_is_official is False:
         # High band: non-official factory = potential spoof / unrecognized issuer
@@ -192,10 +209,14 @@ def run_origin_transparency(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    rated = any(v is not None for v in (
-        inp.issuer_wallet_age_days, inp.issuer_has_history,
-        inp.verified_entity, inp.public_docs, inp.announcement_events,
-    ))
+    # Load-bearing: the two inputs the reader actually reads on-chain
+    # (issuer_has_history from tx-count, announcement_events from logs). The other
+    # three (issuer_wallet_age_days, verified_entity, public_docs) are
+    # un-implemented placeholders the reader always leaves None — keying rated on
+    # them would make this dimension permanently unrated. This is the lowest-
+    # stakes dimension (no High/critical), but the no-infer discipline is the
+    # same: rate only when both real reads land.
+    rated = inp.issuer_has_history is not None and inp.announcement_events is not None
 
     if inp.issuer_wallet_age_days is not None and inp.issuer_wallet_age_days < 30:
         # Medium band: a fresh issuer wallet has no track record
