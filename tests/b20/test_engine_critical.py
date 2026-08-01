@@ -30,16 +30,6 @@ def test_finite_cap_is_not_uncapped():
     assert not any("uncapped_mint" in r for r in detect_critical(_clean()))
 
 
-def test_non_official_factory_is_critical():
-    inp = _clean()
-    inp.factory_is_official = False
-    assert any("non_official_factory" in r for r in detect_critical(inp))
-
-
-def test_official_factory_not_critical():
-    assert not any("non_official_factory" in r for r in detect_critical(_clean()))
-
-
 def test_single_eoa_admin_is_critical():
     inp = _clean()
     inp.admin_holders = ["0xaaa"]

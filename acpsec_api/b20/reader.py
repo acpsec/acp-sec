@@ -410,7 +410,10 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     # Preflight — definitive negatives raise; None (unknown/RPC fail) proceeds.
     isb20 = factory_is_b20(rpc, address, chain_id)
     if isb20 is False:
-        raise B20Unavailable("not a B20 token (factory.isB20 == false)")
+        raise B20Unavailable(
+            "the official B20 factory reports this contract is not a B20 token "
+            "(factory.isB20 == false), so B20 security reads do not apply"
+        )
     if variant is None:
         raise B20Unavailable("address is not a recognized B20 variant (byte[10])")
     if factory_is_b20_initialized(rpc, address, chain_id) is False:

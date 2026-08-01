@@ -172,16 +172,12 @@ def run_variant_config(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    # Load-bearing: factory_is_official (the non-official-factory High + critical
-    # driver — a spoofed / unrecognized deployment). variant/decimals/currency
-    # are config-quality Mediums that presuppose an official token, so a readable
-    # variant must NOT clear a missing factory check.
+    # Load-bearing: factory_is_official. A non-official token (isB20 == false) is
+    # refused upstream in read_token (raises B20Unavailable), so this value is only
+    # ever True (official) or None (couldn't verify). Rate iff verified; None ->
+    # unrated (never inferred official). There is deliberately no
+    # `factory_is_official is False` branch — that state cannot reach the engine.
     rated = inp.factory_is_official is not None
-
-    if inp.factory_is_official is False:
-        # High band: non-official factory = potential spoof / unrecognized issuer
-        penalty += 60
-        findings.append(Finding("High", "not deployed via the official B20 factory"))
 
     if inp.variant == "ASSET":
         if inp.decimals is not None and not (6 <= inp.decimals <= 18):

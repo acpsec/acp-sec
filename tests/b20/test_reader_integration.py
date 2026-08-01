@@ -195,3 +195,26 @@ def test_revoked_admin_origin_unrated_when_origin_read_fails():
     assert inp.issuer_has_history is None
     res = assess(inp)
     assert res.dimensions["origin_transparency"].rated is False
+
+
+# --------------------------------------------------------------------------
+# #26 item 1: keep the isB20==false REFUSAL, but enrich its message; and confirm
+# isB20==None (couldn't verify) still proceeds best-effort (variant_config unrated).
+# --------------------------------------------------------------------------
+def test_isb20_false_refusal_message_explains_reads_dont_apply():
+    f = FakeRpc(84532).set_is_b20(ASSET, False)
+    with pytest.raises(R.B20Unavailable) as exc:
+        R.read_token(ASSET, 84532, rpc=f)
+    msg = str(exc.value).lower()
+    assert "not a b20" in msg                                  # cause named
+    assert "do not apply" in msg or "security" in msg          # enrichment
+
+
+def test_isb20_none_proceeds_and_variant_config_unrated():
+    # Guard: an UNKNOWN factory read (isB20 None, not False) must NOT refuse — it
+    # proceeds best-effort, factory_is_official=None, variant_config unrated.
+    f = FakeRpc(84532).set_logs_fail()   # nothing programmed: isB20 None; reads fail
+    inp = R.read_token(ASSET, 84532, rpc=f)
+    assert inp.factory_is_official is None
+    res = assess(inp)
+    assert "variant_config" in res.unrated_dimensions
