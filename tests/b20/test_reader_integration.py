@@ -117,3 +117,29 @@ def test_reader_to_engine_end_to_end():
     assert d["rated"] is True
     assert d["issuer_powers"]["can_freeze"] is True
     assert d["issuer_powers"]["admin_is_multisig"] is True
+
+
+# --------------------------------------------------------------------------
+# Over-correction regression: a fully-revoked admin is the SAFEST authority
+# posture (empty holders from a SUCCESSFUL replay = a KNOWN state, not a read
+# failure). The reader must record it as admin_roles_revoked=True so the
+# load-bearing issuer_authority rule keeps it rated instead of wrongly unrating
+# the safest token. (Driven through read_token — the fix lives in the reader.)
+# --------------------------------------------------------------------------
+def _revoked_admin_asset() -> FakeRpc:
+    f = _good_asset()  # grants DEFAULT_ADMIN to ADMIN at block 1
+    f.revoke_role(C.B20_ROLE_DEFAULT_ADMIN, ADMIN, 2)  # net admin holders -> []
+    return f
+
+
+def test_reader_sets_admin_roles_revoked_when_admin_fully_revoked():
+    inp = R.read_token(ASSET, 84532, rpc=_revoked_admin_asset())
+    assert inp.admin_holders == []
+    assert inp.admin_roles_revoked is True
+
+
+def test_revoked_admin_keeps_issuer_authority_rated_end_to_end():
+    inp = R.read_token(ASSET, 84532, rpc=_revoked_admin_asset())
+    res = assess(inp)
+    assert res.dimensions["issuer_authority"].rated is True
+    assert "issuer_authority" not in res.unrated_dimensions

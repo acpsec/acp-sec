@@ -420,6 +420,10 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         # issuer authority (role holders via log replay)
         admin_holders=admin,
         admin_is_multisig=_classify_multisig(rpc, admin),
+        # A successful replay yielding [] = admin fully revoked (a KNOWN, safest
+        # state), not "unknown". Record it so issuer_authority stays rated (and
+        # scores best) rather than being wrongly unrated; None only on read fail.
+        admin_roles_revoked=(len(admin) == 0) if admin is not None else None,
         mint_role_holders=roles["mint"],
         burn_role_holders=roles["burn"],
         pause_role_holders=pause,

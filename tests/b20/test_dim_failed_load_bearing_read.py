@@ -144,3 +144,29 @@ def test_clean_fully_read_token_stays_rated_and_scores_normally():
     assert all(d.rated for d in res.dimensions.values())
     assert res.rated is True
     assert res.grade in ("A", "B")
+
+
+# --------------------------------------------------------------------------
+# Over-correction guards: a load-bearing input that is legitimately None for a
+# SAFE reason must NOT unrate a healthy dimension (the dual of the bug above).
+# These are dimension-pure and hold regardless of the reader.
+# --------------------------------------------------------------------------
+def test_supply_stays_rated_when_multiplier_none_stablecoin():
+    # multiplier_active is legitimately None for stablecoins (Asset-only feature);
+    # supply gates on supply_cap only, so it must stay rated.
+    r = run_supply_integrity(_inp(supply_cap=1_000_000_000, multiplier_active=None, burn_enabled=None))
+    assert r.rated is True
+
+
+def test_variant_stays_rated_for_official_token():
+    # factory_is_official is only ever True/None at the reader (False raises), so
+    # an official token must stay rated — no safe-None to over-gate.
+    r = run_variant_config(_inp(variant="STABLECOIN", decimals=6, currency_code="USD", factory_is_official=True))
+    assert r.rated is True
+
+
+def test_transfer_stays_rated_for_benign_token():
+    # has([])->False and policyId 0->False mean empty/no-feature resolve to False
+    # (not None), so a benign token's coercive reads keep it rated.
+    r = run_transfer_policy(_inp(can_freeze=False, can_seize=False, is_paused=False))
+    assert r.rated is True
