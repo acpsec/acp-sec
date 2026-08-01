@@ -143,3 +143,55 @@ def test_revoked_admin_keeps_issuer_authority_rated_end_to_end():
     res = assess(inp)
     assert res.dimensions["issuer_authority"].rated is True
     assert "issuer_authority" not in res.unrated_dimensions
+
+
+# --------------------------------------------------------------------------
+# PR 1 (#26 item 2): origin issuer-proxy fallback for fully-revoked-admin tokens.
+# When net admin is [], origin falls back to the FIRST historical DEFAULT_ADMIN
+# grantee — captured during the SAME role replay (no extra RPC) — so
+# origin_transparency can still rate. The proxy is None only if no grant event
+# ever existed, or the origin read itself fails.
+# --------------------------------------------------------------------------
+ADMIN2 = "0x" + "c2" * 20
+
+
+def _transferred_admin_asset() -> FakeRpc:
+    """Admin transferred: ADMIN granted @1 (in _good_asset), ADMIN2 granted @5,
+    ADMIN revoked @6 -> net admin = [ADMIN2]; first grantee = ADMIN."""
+    f = _good_asset()
+    f.grant_role(C.B20_ROLE_DEFAULT_ADMIN, ADMIN2, 5)
+    f.revoke_role(C.B20_ROLE_DEFAULT_ADMIN, ADMIN, 6)
+    f.set_code(ADMIN2, "0x")       # EOA
+    f.set_txcount(ADMIN2, "0x0")   # 0 txns -> issuer_has_history False (ADMIN has 16)
+    return f
+
+
+def test_revoked_admin_origin_uses_first_grantee_fallback():
+    # RED today: issuer = admin[0] = None (revoked) -> issuer_has_history None ->
+    # origin unrated. After the fix: issuer falls back to the first grantee
+    # (ADMIN, txcount 16) -> issuer_has_history True -> origin rated.
+    inp = R.read_token(ASSET, 84532, rpc=_revoked_admin_asset())
+    assert inp.admin_holders == []
+    assert inp.issuer_has_history is True
+    res = assess(inp)
+    assert res.dimensions["origin_transparency"].rated is True
+
+
+def test_normal_token_origin_uses_current_admin_not_first_grantee():
+    # Guard 1: with a non-empty admin, the issuer proxy is the CURRENT admin[0],
+    # NOT the historical first grantee — behavior unchanged by the fallback.
+    inp = R.read_token(ASSET, 84532, rpc=_transferred_admin_asset())
+    assert inp.admin_holders == [ADMIN2]        # current admin
+    assert inp.issuer_has_history is False       # ADMIN2 (0 txns), not first-grantee ADMIN (16)
+
+
+def test_revoked_admin_origin_unrated_when_origin_read_fails():
+    # Guard 2: a fallback issuer exists, but the origin read itself fails
+    # (txcount None) -> issuer_has_history None -> origin unrated. The fallback
+    # must not fabricate history.
+    f = _revoked_admin_asset()
+    f.set_txcount(ADMIN, None)   # the first-grantee's txcount read fails
+    inp = R.read_token(ASSET, 84532, rpc=f)
+    assert inp.issuer_has_history is None
+    res = assess(inp)
+    assert res.dimensions["origin_transparency"].rated is False

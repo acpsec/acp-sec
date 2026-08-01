@@ -226,18 +226,26 @@ def get_creation_block(rpc, token: str, chain_id: int) -> Optional[int]:
     return lo
 
 
-def role_holders(rpc, token: str, role: str, chain_id: int, from_block: int = 0) -> Optional[list[str]]:
-    """Current holders of ``role`` by replaying RoleGranted/RoleRevoked logs in
-    (block, logIndex) order. None on RPC failure; [] when no holders remain.
+def role_holders_detailed(
+    rpc, token: str, role: str, chain_id: int, from_block: int = 0
+) -> tuple[Optional[list[str]], Optional[str]]:
+    """Replay RoleGranted/RoleRevoked logs -> (current holders, first grantee).
+
+    ``holders`` is None on RPC failure, [] when no holders remain. ``first_grantee``
+    is the account of the earliest RoleGranted event in range (the historical
+    original grantee — e.g. the deployer for DEFAULT_ADMIN), or None if the fetch
+    failed or no grant event exists. Both come from a SINGLE getLogs replay, so a
+    caller needing the fallback pays no extra RPC.
 
     ``from_block`` bounds the scan; read_token passes the token's creation block.
     """
     topics = [[C.B20_EVENT_ROLE_GRANTED, C.B20_EVENT_ROLE_REVOKED], role]
     logs = chunked_get_logs(rpc, token, topics, chain_id, from_block=from_block)
     if logs is None:
-        return None
+        return None, None
     logs.sort(key=lambda lg: (int(lg["blockNumber"], 16), int(lg.get("logIndex", "0x0"), 16)))
     holders: list[str] = []
+    first_grantee: Optional[str] = None
     granted = C.B20_EVENT_ROLE_GRANTED.lower()
     revoked = C.B20_EVENT_ROLE_REVOKED.lower()
     for lg in logs:
@@ -248,16 +256,34 @@ def role_holders(rpc, token: str, role: str, chain_id: int, from_block: int = 0)
         if acct is None:
             continue
         ev = topic_list[0].lower()
-        if ev == granted and acct not in holders:
-            holders.append(acct)
+        if ev == granted:
+            if first_grantee is None:
+                first_grantee = acct
+            if acct not in holders:
+                holders.append(acct)
         elif ev == revoked and acct in holders:
             holders.remove(acct)
+    return holders, first_grantee
+
+
+def role_holders(rpc, token: str, role: str, chain_id: int, from_block: int = 0) -> Optional[list[str]]:
+    """Current holders of ``role`` (net of grants/revokes). None on RPC failure;
+    [] when no holders remain. Thin wrapper over ``role_holders_detailed``.
+    """
+    holders, _ = role_holders_detailed(rpc, token, role, chain_id, from_block)
     return holders
 
 
 def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
+    # DEFAULT_ADMIN via the detailed replay so we also capture the first grantee
+    # (the origin issuer-proxy fallback for fully-revoked admins) from the same
+    # getLogs — no extra RPC.
+    admin, admin_first_grantee = role_holders_detailed(
+        rpc, token, C.B20_ROLE_DEFAULT_ADMIN, chain_id, from_block
+    )
     return {
-        "admin": role_holders(rpc, token, C.B20_ROLE_DEFAULT_ADMIN, chain_id, from_block),
+        "admin": admin,
+        "admin_first_grantee": admin_first_grantee,
         "mint": role_holders(rpc, token, C.B20_ROLE_MINT, chain_id, from_block),
         "burn": role_holders(rpc, token, C.B20_ROLE_BURN, chain_id, from_block),
         "burn_blocked": role_holders(rpc, token, C.B20_ROLE_BURN_BLOCKED, chain_id, from_block),
@@ -341,8 +367,14 @@ def read_variant_config(rpc, token: str, variant: Optional[str]) -> dict:
 # --------------------------------------------------------------------------
 # Origin & transparency
 # --------------------------------------------------------------------------
-def read_origin(rpc, token: str, admin_holders: Optional[list[str]], chain_id: int, from_block: int = 0) -> dict:
-    issuer = admin_holders[0] if admin_holders else None
+def read_origin(
+    rpc, token: str, admin_holders: Optional[list[str]], chain_id: int,
+    from_block: int = 0, *, admin_first_grantee: Optional[str] = None,
+) -> dict:
+    # Issuer proxy: the current admin, or — for a fully-revoked admin ([]) — the
+    # first historical DEFAULT_ADMIN grantee (typically the deployer). None only
+    # when there is no admin history at all, or the txcount read itself fails.
+    issuer = admin_holders[0] if admin_holders else admin_first_grantee
     issuer_has_history: Optional[bool] = None
     if issuer is not None:
         txc = _decode_uint(rpc.eth_get_transaction_count(issuer))
@@ -404,7 +436,10 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     supply = read_supply(rpc, address, variant)
     policy = read_transfer_policy(rpc, address)
     vc = read_variant_config(rpc, address, variant)
-    origin = read_origin(rpc, address, admin, chain_id, from_block)
+    origin = read_origin(
+        rpc, address, admin, chain_id, from_block,
+        admin_first_grantee=roles["admin_first_grantee"],
+    )
 
     def has(holders: Optional[list[str]]) -> Optional[bool]:
         return None if holders is None else len(holders) > 0
