@@ -24,7 +24,6 @@ prod values**, rotated in 9B — do **not** reuse the staging token/password.
 | `PORT` | Port uvicorn binds (`--port $PORT`). | no | yes | Injected by Railway automatically — do **not** set by hand. |
 | `SCANNER_TOKEN` | Shared token gating the SSRF-sensitive endpoints (`/api/scanner/lookup\|scan\|bulk`, `/api/onchain/check`). Unset ⟹ endpoints run open (dev mode). | **yes** | yes | **Rotate a fresh prod value in 9B** — not the staging token. Split-origin: the frontend sends it as `X-Scanner-Token`. **Must equal** the frontend's `NEXT_PUBLIC_SCANNER_TOKEN`. |
 | `LEADERBOARD_PASSWORD` | Password checked by `POST /api/leaderboard/auth` before issuing the `lb_session` cookie. | **yes** | yes | **Rotate a fresh prod value in 9B.** Needed for leaderboard login. |
-| `ANTHROPIC_API_KEY` | Server-side Claude key for the `POST /api/chat/sentryagent` proxy. Unset ⟹ chat returns 503. | **yes** | yes | Required for the SentryAgent playground chat in prod. Use a prod-scoped key. |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated exact origin allowlist (overrides the built-in default). | no | optional | Default already includes `https://acpsec.app` and localhost — leave unset unless locking further (e.g. dropping localhost for prod hardening). |
 | `CORS_ALLOWED_ORIGIN_REGEX` | Regex allowing Vercel preview origins (overrides the default `acpsec-web-<hash>.vercel.app` pattern). | no | optional | Default matches acpsec-web preview URLs. Consider clearing on prod to reject preview origins. |
 | `ACPSEC_COOKIE_SAMESITE` | `SameSite` attribute for `lb_session`. | no | optional | Default `none` — correct for split-origin (`acpsec.app` ↔ `api.acpsec.app`). Leave unset. |
@@ -32,8 +31,14 @@ prod values**, rotated in 9B — do **not** reuse the staging token/password.
 | `BASE_RPC_URL` | Optional RPC override for `POST /api/onchain/check` only. | no (public endpoint) | optional | Staging leaves this unset (public Base endpoint, gate 8.0c). **Prod decision (9B):** consider a dedicated RPC provider for rate-limit/reliability headroom. Does **not** affect the b20 scan engine (hardcoded public endpoints). |
 
 **Minimal prod set to enter by hand (9B):** `SCANNER_TOKEN`,
-`LEADERBOARD_PASSWORD`, `ANTHROPIC_API_KEY` (all secret, all fresh prod values).
+`LEADERBOARD_PASSWORD` (both secret, fresh prod values).
 Everything else uses correct built-in defaults.
+
+`ANTHROPIC_API_KEY` is **no longer a prod requirement** — it powered only the
+SentryAgent chat endpoint, removed in the teardown. Any value still set on
+api-prod is a leftover and can be removed (revoke the key in the Anthropic
+console). NOTE: the same var name is still read by `acpsec/agent_client.py` (the
+CLI injection framework), which is not the prod api.
 
 ## Frontend — Vercel (prod)
 
