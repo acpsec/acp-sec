@@ -95,19 +95,19 @@ def test_leaderboard_populated(leaderboard_client) -> None:
 
 def test_leaderboard_null_scores_handled(leaderboard_client) -> None:
     # INTENTIONAL PARITY DEVIATION: Flask 500s on agents with null scores
-    # (unhandled None > None TypeError — e.g. the seeded SentryAgent entry).
-    # FastAPI handles this defensively (null → 0). The deviation is deliberate:
-    # a crash is not a contract. This is why there is NO populated-state Flask
-    # parity test for /api/leaderboard (Flask would 500 on the real seed data).
-    # Multiple agents so the score-descending sort path is exercised too — a
-    # null score must not break sorting (Flask 500s before it ever sorts).
+    # (unhandled None > None TypeError). FastAPI handles this defensively
+    # (null → 0). The deviation is deliberate: a crash is not a contract. This is
+    # why there is NO populated-state Flask parity test for /api/leaderboard
+    # (Flask would 500 on real null-score data). Multiple agents so the
+    # score-descending sort path is exercised too — a null score must not break
+    # sorting (Flask 500s before it ever sorts).
     client, store, _reports, _sessions = leaderboard_client
     store.save({
         "updated": "2026-07-03",
         "checks_per_scan": 38,
         "agents": [
             {"name": "Scored", "score": 75, "previous_score": 60, "tier": "SECURE"},
-            {"name": "SentryAgent", "score": None, "previous_score": None, "tier": "COMPROMISED"},
+            {"name": "Unscored", "score": None, "previous_score": None, "tier": "COMPROMISED"},
         ],
     })
     resp = client.get("/api/leaderboard")
@@ -116,10 +116,10 @@ def test_leaderboard_null_scores_handled(leaderboard_client) -> None:
     by_name = {a["name"]: a for a in agents}
 
     # Null-score agent renders defensively and sorts last (treated as 0).
-    sentry = by_name["SentryAgent"]
-    assert sentry["movement"] == "same"
-    assert sentry["movement_delta"] == 0
-    assert sentry["rank"] == 2
+    unscored = by_name["Unscored"]
+    assert unscored["movement"] == "same"
+    assert unscored["movement_delta"] == 0
+    assert unscored["rank"] == 2
     assert by_name["Scored"]["rank"] == 1
 
 

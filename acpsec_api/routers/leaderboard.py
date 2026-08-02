@@ -44,10 +44,9 @@ def get_leaderboard(
     based on score vs previous_score.
 
     INTENTIONAL PARITY DEVIATION: Flask 500s on agents with null scores
-    (unhandled ``None > None`` TypeError — e.g. the seeded SentryAgent entry).
-    FastAPI handles this defensively by coercing null scores to 0. The
-    deviation is deliberate: a crash is not a contract. See
-    test_leaderboard_null_scores_handled.
+    (unhandled ``None > None`` TypeError). FastAPI handles this defensively by
+    coercing null scores to 0. The deviation is deliberate: a crash is not a
+    contract. See test_leaderboard_null_scores_handled.
     """
     board = store.load()
     agents = list(board.get("agents", []))
