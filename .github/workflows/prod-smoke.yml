@@ -1,9 +1,8 @@
 name: prod-smoke
 
 # Weekly env-PRECONDITION check for api-prod. Catches CONFIG DRIFT — a required
-# prod secret going missing — the failure class that left the SentryAgent chat
-# dead for weeks. NOT an uptime monitor: it reads booleans from /api/health only,
-# makes no paid or side-effecting calls (no live chat POST).
+# prod secret going missing. NOT an uptime monitor: it reads booleans from
+# /api/health only, makes no paid or side-effecting calls.
 on:
   schedule:
     - cron: "0 8 * * 1"      # Mondays 08:00 UTC (weekly)
@@ -26,7 +25,7 @@ jobs:
           body="$(curl -fsS --retry 3 --retry-delay 5 --max-time 20 "$URL")"
           echo "health = $body"
           fail=""
-          for key in acpsec_available scanner_protected anthropic_configured leaderboard_configured; do
+          for key in acpsec_available scanner_protected leaderboard_configured; do
             v="$(printf '%s' "$body" | jq -r --arg k "$key" '.[$k]')"
             [ "$v" = "true" ] || fail="$fail $key=$v"
           done
@@ -54,7 +53,7 @@ jobs:
               "**Failing:**" + detail,
               "",
               "A required prod secret is likely missing/empty on api-prod — check " +
-                "`ANTHROPIC_API_KEY`, `LEADERBOARD_PASSWORD`, `SCANNER_TOKEN` (values are never logged).",
+                "`LEADERBOARD_PASSWORD`, `SCANNER_TOKEN` (values are never logged).",
               "",
               `Run: ${runUrl}`,
             ].join("\n");
