@@ -42,15 +42,15 @@ def test_malformed_response_returns_none():
     assert _client(transport).eth_call("0xabc", "0x") is None
 
 
-def test_timeout_retries_once_then_returns_none():
+def test_transient_exception_retried_then_none():
     calls = []
 
     def transport(payload):
         calls.append(1)
         raise TimeoutError("slow")
 
-    assert _client(transport).eth_call("0xabc", "0x") is None
-    assert len(calls) == 2  # initial + one retry
+    assert _retry_client(transport).eth_call("0xabc", "0x") is None
+    assert len(calls) == _MAX_ATTEMPTS  # bounded retries on a transient exception
 
 
 def test_transient_error_then_success():
@@ -62,7 +62,7 @@ def test_transient_error_then_success():
             raise ConnectionError("flaky")
         return {"result": "0xbeef"}
 
-    assert _client(transport).eth_call("0xabc", "0x") == "0xbeef"
+    assert _retry_client(transport).eth_call("0xabc", "0x") == "0xbeef"
     assert len(calls) == 2
 
 
@@ -104,7 +104,7 @@ def test_success_sets_any_response_and_increments_attempts():
 def test_all_transport_failures_leave_any_response_false():
     def boom(payload):
         raise TimeoutError("down")
-    c = _client(boom)
+    c = _retry_client(boom)
     c.eth_call("0xabc", "0x")
     assert c.attempts == 1
     assert c.any_response is False
@@ -175,6 +175,124 @@ def test_dns_failure_stays_unreachable():
     # Non-HTTP transport failures (DNS/connection/timeout) remain "unreachable".
     def transport(payload):
         raise urllib.error.URLError("name resolution failed")
-    c = _client(transport)
+    c = _retry_client(transport)
     assert c.eth_call("0xabc", "0x") is None
     assert c.any_response is False
+
+
+# ── #24: bounded backoff on TRANSIENT failures + per-chain RPC config ────────
+from acpsec_api.b20.constants import CHAIN_RPC_ENDPOINTS  # noqa: E402
+from acpsec_api.b20.rpc import (  # noqa: E402
+    _BACKOFF_CAP,
+    _MAX_ATTEMPTS,
+    resolve_rpc_endpoint,
+)
+
+
+def _retry_client(transport, sleep=None):
+    # No-op sleeper by default so bounded-backoff retries never actually wait.
+    return RpcClient(8453, _transport=transport, _sleep=sleep or (lambda _d: None))
+
+
+def _http(code, reason, retry_after=None):
+    hdrs = {"Retry-After": retry_after} if retry_after is not None else {}
+    return urllib.error.HTTPError("https://rpc.test", code, reason, hdrs, None)
+
+
+def test_transient_429_retried_then_succeeds():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        if len(calls) <= 2:
+            raise _http(429, "Too Many Requests")
+        return {"result": [{"topics": ["0xaa"]}]}
+
+    assert _retry_client(transport).eth_get_logs({"address": "0x"}) == [{"topics": ["0xaa"]}]
+    assert len(calls) == 3  # 429, 429, success
+
+
+def test_permanent_transient_returns_none_after_bounded_retries():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        raise _http(429, "Too Many Requests")
+
+    assert _retry_client(transport).eth_get_logs({"address": "0x"}) is None
+    assert len(calls) == _MAX_ATTEMPTS  # bounded — the loop never masks a real failure
+
+
+def test_5xx_is_transient_and_retried():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        if len(calls) == 1:
+            raise _http(503, "Service Unavailable")
+        return {"result": "0x1"}
+
+    assert _retry_client(transport).eth_call("0x", "0x") == "0x1"
+    assert len(calls) == 2
+
+
+def test_json_rpc_rate_limit_code_is_transient_and_retried():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        if len(calls) == 1:
+            return {"error": {"code": -32005, "message": "limit exceeded"}}
+        return {"result": "0x1"}
+
+    assert _retry_client(transport).eth_call("0x", "0x") == "0x1"
+    assert len(calls) == 2
+
+
+def test_contract_revert_is_not_retried():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        return {"error": {"code": -32000, "message": "execution reverted"}}
+
+    assert _retry_client(transport).eth_call("0x", "0x") is None
+    assert len(calls) == 1  # a revert is DATA, not noise — exactly one call
+
+
+def test_definitive_4xx_is_not_retried():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        raise _http(400, "Bad Request")
+
+    assert _retry_client(transport).eth_call("0x", "0x") is None
+    assert len(calls) == 1
+
+
+def test_retry_after_honored_but_capped():
+    slept, calls = [], []
+
+    def transport(payload):
+        calls.append(1)
+        if len(calls) == 1:
+            raise _http(429, "Too Many Requests", retry_after="5")  # server asks 5s
+        return {"result": "0x1"}
+
+    c = _retry_client(transport, sleep=lambda d: slept.append(d))
+    assert c.eth_call("0x", "0x") == "0x1"
+    assert slept == [_BACKOFF_CAP]  # honored, but capped to keep the sync scan bounded
+
+
+def test_config_per_chain_env_routes_endpoint(monkeypatch):
+    monkeypatch.setenv("B20_RPC_URL_8453", "https://mainnet.provider.test/key")
+    monkeypatch.delenv("B20_RPC_URL_84532", raising=False)
+    assert RpcClient(8453, _transport=lambda p: {}).url == "https://mainnet.provider.test/key"
+    # the unset chain keeps its hardcoded public default
+    assert RpcClient(84532, _transport=lambda p: {}).url == CHAIN_RPC_ENDPOINTS[84532]
+
+
+def test_zero_config_is_todays_public_endpoint(monkeypatch):
+    monkeypatch.delenv("B20_RPC_URL_8453", raising=False)
+    assert resolve_rpc_endpoint(8453) == CHAIN_RPC_ENDPOINTS[8453]
