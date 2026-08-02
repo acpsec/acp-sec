@@ -218,3 +218,64 @@ def test_isb20_none_proceeds_and_variant_config_unrated():
     assert inp.factory_is_official is None
     res = assess(inp)
     assert "variant_config" in res.unrated_dimensions
+
+
+# --------------------------------------------------------------------------
+# #24: bounded backoff at the RPC layer turns transient rate-limits into rated
+# scans. Driven through the REAL RpcClient with a JSON-RPC transport shim over a
+# FakeRpc, so the actual retry path runs (FakeRpc alone bypasses it).
+# --------------------------------------------------------------------------
+import json  # noqa: E402
+import urllib.error  # noqa: E402
+
+from acpsec_api.b20.rpc import RpcClient  # noqa: E402
+
+
+def _flaky_transport(fake: FakeRpc, fail_first: int = 2):
+    """JSON-RPC transport over a FakeRpc that 429s the first ``fail_first`` times
+    per distinct payload, then delegates — exercising RpcClient's real retry."""
+    counts: dict[str, int] = {}
+
+    def transport(payload):
+        key = json.dumps(payload, sort_keys=True)
+        counts[key] = counts.get(key, 0) + 1
+        if counts[key] <= fail_first:
+            raise urllib.error.HTTPError("https://rpc.test", 429, "Too Many Requests", {}, None)
+        method, params = payload["method"], payload["params"]
+        if method == "eth_call":
+            res = fake.eth_call(params[0]["to"], params[0]["data"], params[1])
+        elif method == "eth_getLogs":
+            res = fake.eth_get_logs(params[0])
+        elif method == "eth_getCode":
+            res = fake.eth_get_code(params[0], params[1])
+        elif method == "eth_getTransactionCount":
+            res = fake.eth_get_transaction_count(params[0], params[1])
+        elif method == "eth_blockNumber":
+            n = fake.eth_block_number()
+            res = None if n is None else hex(n)
+        else:
+            res = None
+        return {"jsonrpc": "2.0", "id": 1, "result": res}
+
+    return transport
+
+
+def test_transient_429s_then_success_yields_fully_rated_scan():
+    # Every call 429s twice then succeeds; bounded retry recovers each read, so the
+    # scan is FULLY RATED. Today (no retry) each 429 -> None -> everything unrates.
+    rpc = RpcClient(84532, _transport=_flaky_transport(_good_asset()), _sleep=lambda _d: None)
+    res = assess(R.read_token(ASSET, 84532, rpc=rpc))
+    assert res.rated is True
+    assert res.unrated_dimensions == []
+
+
+def test_permanently_rate_limited_rpc_unrates_honestly():
+    # Guard: bounded retries must never MASK a real failure. A permanently-429ing
+    # endpoint still yields an honestly-unrated scan (not a fabricated pass).
+    def always_429(payload):
+        raise urllib.error.HTTPError("https://rpc.test", 429, "Too Many Requests", {}, None)
+
+    rpc = RpcClient(84532, _transport=always_429, _sleep=lambda _d: None)
+    res = assess(R.read_token(ASSET, 84532, rpc=rpc))
+    assert res.rated is False
+    assert set(res.unrated_dimensions) == set(res.dimensions)  # all dimensions unrated

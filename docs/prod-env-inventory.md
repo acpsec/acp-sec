@@ -28,7 +28,9 @@ prod values**, rotated in 9B — do **not** reuse the staging token/password.
 | `CORS_ALLOWED_ORIGIN_REGEX` | Regex allowing Vercel preview origins (overrides the default `acpsec-web-<hash>.vercel.app` pattern). | no | optional | Default matches acpsec-web preview URLs. Consider clearing on prod to reject preview origins. |
 | `ACPSEC_COOKIE_SAMESITE` | `SameSite` attribute for `lb_session`. | no | optional | Default `none` — correct for split-origin (`acpsec.app` ↔ `api.acpsec.app`). Leave unset. |
 | `ACPSEC_COOKIE_SECURE` | `Secure` flag for `lb_session`. | no | optional | Default `true` — correct over HTTPS. Leave unset. |
-| `BASE_RPC_URL` | Optional RPC override for `POST /api/onchain/check` only. | no (public endpoint) | optional | Staging leaves this unset (public Base endpoint, gate 8.0c). **Prod decision (9B):** consider a dedicated RPC provider for rate-limit/reliability headroom. Does **not** affect the b20 scan engine (hardcoded public endpoints). |
+| `BASE_RPC_URL` | Optional RPC override for `POST /api/onchain/check` only. | no (public endpoint) | optional | Staging leaves this unset (public Base endpoint, gate 8.0c). Affects **only** `/api/onchain/check` — the b20 scan engine has its own per-chain vars (below). |
+| `B20_RPC_URL_8453` | Per-chain RPC endpoint for the **b20 scan engine** on Base **mainnet** (8453). Unset ⟹ the hardcoded public endpoint. | **yes** — provider URLs embed API keys | optional | **Recommended for prod (#24):** a dedicated provider removes the public-endpoint rate-limiting that made mainnet scans pessimistically unrate. Zero-config = today's public endpoint; setting this is the activation step. |
+| `B20_RPC_URL_84532` | Per-chain RPC endpoint for the b20 scan engine on Base **Sepolia** (84532). Unset ⟹ the hardcoded public endpoint. | **yes** — provider URLs embed API keys | optional | Same as `B20_RPC_URL_8453`, for testnet. |
 
 **Minimal prod set to enter by hand (9B):** `SCANNER_TOKEN`,
 `LEADERBOARD_PASSWORD` (both secret, fresh prod values).
