@@ -68,13 +68,13 @@ def test_read_token_passes_creation_block_to_role_scan(monkeypatch):
     f = _good_asset()
     f.set_creation_code(ASSET, 1, "0xef")  # token gains code at block 1
     captured = {}
-    real = R.role_holders
+    real = R.role_holders_all
 
-    def spy(rpc, token, role, chain_id, from_block=0):
+    def spy(rpc, token, chain_id, from_block=0):
         captured["from_block"] = from_block
-        return real(rpc, token, role, chain_id, from_block=from_block)
+        return real(rpc, token, chain_id, from_block=from_block)
 
-    monkeypatch.setattr(R, "role_holders", spy)
+    monkeypatch.setattr(R, "role_holders_all", spy)
     R.read_token(ASSET, 84532, rpc=f)
     assert captured["from_block"] == 1
 
@@ -267,6 +267,29 @@ def test_transient_429s_then_success_yields_fully_rated_scan():
     res = assess(R.read_token(ASSET, 84532, rpc=rpc))
     assert res.rated is True
     assert res.unrated_dimensions == []
+
+
+# --------------------------------------------------------------------------
+# #24 follow-up: a provider getLogs RANGE CAP (e.g. Alchemy Free tier's 10-block
+# limit) must be surfaced in the scan response — keyed by the unrated dimension,
+# provider string verbatim — so the person scanning sees WHY, not just a silent
+# unrated. read_diagnostics is additive and empty on a clean scan.
+# --------------------------------------------------------------------------
+def test_range_cap_reads_surface_read_diagnostics_verbatim():
+    # Cap getLogs so hard even the chunk windows fail → role + announcement reads
+    # are honestly unrated, and the scan explains why in the provider's own words.
+    f = _good_asset().set_max_getlogs_range(0)
+    d = assess(R.read_token(ASSET, 84532, rpc=f)).to_dict()
+    diag = d["read_diagnostics"]
+    assert set(diag) >= {"issuer_authority", "transfer_policy", "origin_transparency"}
+    assert "range cap" in diag["issuer_authority"].lower()
+    assert "10 block range" in diag["issuer_authority"]      # verbatim provider words
+    assert "supply_integrity" not in diag                    # supply read succeeded
+
+
+def test_clean_scan_has_empty_read_diagnostics():
+    d = assess(R.read_token(ASSET, 84532, rpc=_good_asset())).to_dict()
+    assert d["read_diagnostics"] == {}
 
 
 def test_permanently_rate_limited_rpc_unrates_honestly():

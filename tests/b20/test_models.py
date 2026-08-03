@@ -44,6 +44,7 @@ def _sample_result() -> ScanResult:
         rated=True,
         multiplier=1.0,
         unrated_dimensions=[],
+        read_diagnostics={},
         dimensions={dim.name: dim},
         issuer_powers=powers,
         deployed_via_factory="0xB20f000000000000000000000000000000000000",
@@ -57,8 +58,8 @@ def test_top_level_keys_match_canonical_schema():
     assert set(d.keys()) == {
         "token", "chain_id", "variant", "name", "symbol", "decimals",
         "currency_code", "trust_score", "raw_score", "grade", "rated",
-        "multiplier", "unrated_dimensions", "is_critical", "critical_reasons",
-        "dimensions", "issuer_powers", "deployed_via_factory",
+        "multiplier", "unrated_dimensions", "read_diagnostics", "is_critical",
+        "critical_reasons", "dimensions", "issuer_powers", "deployed_via_factory",
         "scanner_version", "scanned_at",
     }
 
@@ -90,3 +91,4 @@ def test_scan_inputs_constructs_with_unknown_defaults():
     assert inp.supply_cap is None
     assert inp.admin_holders is None
     assert inp.variant is None
+    assert inp.read_diagnostics == {}   # additive read provenance, empty by default

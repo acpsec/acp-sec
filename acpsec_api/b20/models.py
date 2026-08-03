@@ -89,6 +89,9 @@ class ScanResult:
     rated: bool               # False if any dimension is unrated
     multiplier: float         # 1.0 if all rated, 0.5 if any unrated
     unrated_dimensions: list[str]
+    # Why an unrated dimension could not be read, keyed by dimension name, provider
+    # string verbatim (e.g. a getLogs range cap). Empty on a clean scan.
+    read_diagnostics: dict[str, str]
     dimensions: dict[str, DimensionResult]
     issuer_powers: IssuerPowers
     deployed_via_factory: Optional[str]
@@ -110,6 +113,7 @@ class ScanResult:
             "rated": self.rated,
             "multiplier": self.multiplier,
             "unrated_dimensions": list(self.unrated_dimensions),
+            "read_diagnostics": dict(self.read_diagnostics),
             "is_critical": self.is_critical,
             "critical_reasons": list(self.critical_reasons),
             "dimensions": {k: v.to_dict() for k, v in self.dimensions.items()},
@@ -172,3 +176,8 @@ class ScanInputs:
     verified_entity: Optional[bool] = None
     public_docs: Optional[bool] = None
     announcement_events: Optional[bool] = None
+
+    # Read provenance — NOT a scoring input. Source-keyed reasons a read could not
+    # be completed (e.g. {"roles": "…provider getLogs range cap…"}); the engine maps
+    # each source to the unrated dimensions it explains for the scan response.
+    read_diagnostics: dict[str, str] = field(default_factory=dict)

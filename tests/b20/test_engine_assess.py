@@ -39,8 +39,8 @@ def test_full_shape_and_score():
     assert set(d.keys()) == {
         "token", "chain_id", "variant", "name", "symbol", "decimals",
         "currency_code", "trust_score", "raw_score", "grade", "rated",
-        "multiplier", "unrated_dimensions", "is_critical", "critical_reasons",
-        "dimensions", "issuer_powers", "deployed_via_factory",
+        "multiplier", "unrated_dimensions", "read_diagnostics", "is_critical",
+        "critical_reasons", "dimensions", "issuer_powers", "deployed_via_factory",
         "scanner_version", "scanned_at",
     }
     assert set(d["dimensions"].keys()) == set(DIMENSION_WEIGHTS)

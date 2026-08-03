@@ -46,6 +46,25 @@ _BACKOFF_CAP = 1.0         # per-sleep ceiling — also caps any honored Retry-A
 _TRANSIENT_RPC_ERROR_CODES = frozenset({-32005})
 _RATE_LIMIT_MSG_HINTS = ("rate limit", "too many requests", "limit exceeded", "capacity")
 
+# A getLogs block-range / response-size rejection. DEFINITIVE (never retried) but
+# CLASSIFIED via ``last_error_kind`` so the reader can fall back to the fixed chunk
+# walk and the scan can surface the provider's own words. Observed shapes:
+#   -32600 "…up to a 10 block range…"          (Alchemy Free tier)
+#   -32602 "query exceeds max block range 2000"  (public base.org sepolia)
+#   -32602 "Log response size exceeded…"        (Alchemy PAYG log-count cap)
+#   HTTP 413 Payload Too Large                   (public base.org mainnet, wide range)
+RANGE_CAP_KIND = "getlogs_range_cap"
+_RANGE_CAP_CODES = frozenset({-32600, -32602})
+_RANGE_CAP_MSG_HINTS = ("block range", "response size", "log response")
+
+
+def _is_range_cap_error(err: Any) -> bool:
+    """True for a getLogs range/size rejection (a provider limit, not a revert)."""
+    if not isinstance(err, dict):
+        return False
+    msg = str(err.get("message", "")).lower()
+    return err.get("code") in _RANGE_CAP_CODES and any(h in msg for h in _RANGE_CAP_MSG_HINTS)
+
 # A transport takes a JSON-RPC request payload and returns the parsed response
 # dict, or raises on a transient/network failure.
 Transport = Callable[[dict], dict]
@@ -128,6 +147,11 @@ class RpcClient:
         self._transport = _transport or _default_transport(self.url, timeout)
         self._sleep = _sleep or time.sleep
         self.last_error: Optional[str] = None
+        # Classification of the last failure (currently only RANGE_CAP_KIND, for a
+        # getLogs range/size rejection). None when the last call succeeded or failed
+        # for any other reason. The reader branches its full-first→chunk fallback on
+        # this; the scan surfaces it as a read diagnostic.
+        self.last_error_kind: Optional[str] = None
         # Connectivity signals (used by the CLI to tell "entirely unreachable"
         # apart from "reachable but every value unrated"). attempts counts logical
         # calls; any_response is True once the node returns anything at all (even
@@ -137,6 +161,7 @@ class RpcClient:
 
     def _rpc(self, method: str, params: list) -> Optional[Any]:
         self.attempts += 1
+        self.last_error_kind = None  # reset per logical call; set only on a match
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
         for attempt in range(1, _MAX_ATTEMPTS + 1):
             retry_after: Optional[float] = None
@@ -147,6 +172,8 @@ class RpcClient:
                 # transient (retry); other 4xx are definitive (data, not noise).
                 self.any_response = True
                 self.last_error = f"http error: {exc.code} {exc.reason}"
+                if exc.code == 413:  # Payload Too Large == a getLogs range/size cap
+                    self.last_error_kind = RANGE_CAP_KIND
                 if not (exc.code == 429 or 500 <= exc.code < 600):
                     return None
                 retry_after = _retry_after_seconds(exc)
@@ -160,8 +187,10 @@ class RpcClient:
                 err = resp.get("error")
                 if err is not None:
                     self.last_error = f"rpc error: {err}"
+                    if _is_range_cap_error(err):
+                        self.last_error_kind = RANGE_CAP_KIND
                     if not _is_transient_rpc_error(err):
-                        return None  # revert / invalid params — definitive
+                        return None  # revert / invalid params / range cap — definitive
                     # transient rate-limit RPC error → fall through to backoff
                 elif "result" not in resp:
                     self.last_error = "malformed response (no result)"

@@ -17,6 +17,16 @@ from .models import DimensionResult, IssuerPowers, ScanInputs, ScanResult
 CRITICAL_UNCAPPED_MINT = "uncapped_mint: supply cap equals type(uint128).max (infinite mint)"
 CRITICAL_SINGLE_EOA_ADMIN = "single_eoa_admin: DEFAULT_ADMIN_ROLE held by a single EOA without multisig"
 
+# Which dimensions a capped getLogs read (keyed by read source in
+# ScanInputs.read_diagnostics) leaves unrated. Role reads gate issuer_authority
+# (admin governance) AND transfer_policy (can_seize/can_pause); announcement reads
+# gate origin_transparency. Used to attach the provider's verbatim reason to the
+# affected UNRATED dimensions in the scan response.
+_READ_SOURCE_DIMENSIONS = {
+    "roles": ("issuer_authority", "transfer_policy"),
+    "announcements": ("origin_transparency",),
+}
+
 
 def detect_critical(inputs: ScanInputs) -> list[str]:
     """Return the critical-condition reasons that hold for these inputs.
@@ -82,6 +92,21 @@ def unrated_dimension_names(dims: list[DimensionResult]) -> list[str]:
     return [d.name for d in dims if not d.rated]
 
 
+def read_diagnostics_for(inputs: ScanInputs, unrated: list[str]) -> dict[str, str]:
+    """Provider read reasons keyed by the UNRATED dimension each one explains.
+
+    A source reason is attached only to its mapped dimensions that are ACTUALLY
+    unrated — a read cap that didn't end up unrating a dimension isn't surfaced.
+    """
+    unrated_set = set(unrated)
+    out: dict[str, str] = {}
+    for source, reason in (inputs.read_diagnostics or {}).items():
+        for dim in _READ_SOURCE_DIMENSIONS.get(source, ()):
+            if dim in unrated_set:
+                out[dim] = reason
+    return out
+
+
 def _issuer_powers(inp: ScanInputs) -> IssuerPowers:
     can_mint_unbounded = (
         None if inp.supply_cap is None else inp.supply_cap == UINT128_MAX
@@ -128,6 +153,7 @@ def assess(
     grade = grade_for(trust_score)
     unrated = unrated_dimension_names(dims)
     rated = not unrated
+    read_diagnostics = read_diagnostics_for(inputs, unrated)
 
     if scanned_at is None:
         scanned_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -148,6 +174,7 @@ def assess(
         rated=rated,
         multiplier=multiplier,
         unrated_dimensions=unrated,
+        read_diagnostics=read_diagnostics,
         dimensions={d.name: d for d in dims},
         issuer_powers=_issuer_powers(inputs),
         deployed_via_factory=inputs.deployed_via_factory,
