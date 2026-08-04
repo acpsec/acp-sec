@@ -375,6 +375,15 @@ def role_holders_all(
     return by_role
 
 
+# Surfaced (via read_diagnostics) when a role replay SUCCEEDS but observed NO grant
+# events — B20 tokens don't emit RoleGranted/RoleRevoked, so an empty replay is not
+# proof of revocation (issue #34). The affected dimensions go UNRATED, not clean.
+ROLE_NOT_DETERMINABLE = (
+    "role holders not determinable from logs for this token "
+    "(no RoleGranted/RoleRevoked events observed; an empty replay is not proof of revocation)"
+)
+
+
 def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
     # ONE merged getLogs for every role (topic0 [Granted,Revoked], no role filter),
     # demuxed client-side — 1 query instead of 5, identical per-role semantics. The
@@ -389,13 +398,25 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
         return all_roles.get(role_hash.lower(), ([], None))  # absent -> known-empty
 
     admin, admin_first_grantee = detailed(C.B20_ROLE_DEFAULT_ADMIN)
+    burn, burn_first = detailed(C.B20_ROLE_BURN)
+    burn_blocked, burn_blocked_first = detailed(C.B20_ROLE_BURN_BLOCKED)
+    pause, pause_first = detailed(C.B20_ROLE_PAUSE)
     return {
         "admin": admin,
         "admin_first_grantee": admin_first_grantee,
         "mint": detailed(C.B20_ROLE_MINT)[0],
-        "burn": detailed(C.B20_ROLE_BURN)[0],
-        "burn_blocked": detailed(C.B20_ROLE_BURN_BLOCKED)[0],
-        "pause": detailed(C.B20_ROLE_PAUSE)[0],
+        "burn": burn,
+        "burn_blocked": burn_blocked,
+        "pause": pause,
+        # Per-role "was a grant EVER observed?" (first_grantee is not None) —
+        # distinguishes never-granted (unknown; B20 emits no role events) from
+        # granted-then-revoked (KNOWN-absent). Consumed by read_token's tri-state.
+        "granted_ever": {
+            "admin": admin_first_grantee is not None,
+            "burn": burn_first is not None,
+            "burn_blocked": burn_blocked_first is not None,
+            "pause": pause_first is not None,
+        },
         "read_error": read_error,
     }
 
@@ -555,15 +576,39 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         admin_first_grantee=roles["admin_first_grantee"],
     )
 
-    def has(holders: Optional[list[str]]) -> Optional[bool]:
-        return None if holders is None else len(holders) > 0
+    ge = roles["granted_ever"]
 
-    # Read provenance: source-keyed reasons a getLogs read was capped (verbatim
-    # provider string). The engine maps each source to the unrated dimension(s) it
-    # explains. Empty on a clean scan.
+    def capability(holders: Optional[list[str]], granted_ever: bool) -> Optional[bool]:
+        # Tri-state: currently-held True; granted-then-revoked False (KNOWN-absent);
+        # never-granted-in-logs None — B20 emits no role events, so an empty replay
+        # is NOT proof the role is unheld (issue #34).
+        if holders is None:
+            return None
+        if len(holders) > 0:
+            return True
+        return False if granted_ever else None
+
+    # Admin revoked ONLY when a grant was observed then fully revoked (the #25
+    # revoked-admin path — a KNOWN safest state). A never-granted empty replay is
+    # UNKNOWN, not revoked; else issuer_authority would rate 100 on B20's silence.
+    if admin is None:
+        admin_roles_revoked: Optional[bool] = None
+    elif len(admin) > 0:
+        admin_roles_revoked = False
+    elif ge["admin"]:
+        admin_roles_revoked = True
+    else:
+        admin_roles_revoked = None
+
+    # Read provenance: source-keyed reasons a role/announcement read couldn't rate a
+    # dimension — a verbatim provider string for a range cap, or a "not determinable"
+    # note when the replay succeeded but B20 emitted no role events. The engine maps
+    # each source to the unrated dimension(s) it explains. Empty on a clean scan.
     read_diagnostics: dict[str, str] = {}
     if roles.get("read_error"):
         read_diagnostics["roles"] = roles["read_error"]
+    elif admin is not None and admin_roles_revoked is None:
+        read_diagnostics["roles"] = ROLE_NOT_DETERMINABLE
     if origin.get("announcement_read_error"):
         read_diagnostics["announcements"] = origin["announcement_read_error"]
 
@@ -578,10 +623,11 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         # issuer authority (role holders via log replay)
         admin_holders=admin,
         admin_is_multisig=_classify_multisig(rpc, admin),
-        # A successful replay yielding [] = admin fully revoked (a KNOWN, safest
-        # state), not "unknown". Record it so issuer_authority stays rated (and
-        # scores best) rather than being wrongly unrated; None only on read fail.
-        admin_roles_revoked=(len(admin) == 0) if admin is not None else None,
+        # [] = revoked ONLY if a grant was ever observed (granted-then-revoked); a
+        # never-granted empty replay is None (unknown), so issuer_authority goes
+        # UNRATED rather than clean-clearing at 100 on silence (issue #34). None also
+        # on read fail.
+        admin_roles_revoked=admin_roles_revoked,
         mint_role_holders=roles["mint"],
         burn_role_holders=roles["burn"],
         pause_role_holders=pause,
@@ -589,12 +635,12 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         # supply integrity
         supply_cap=supply["supply_cap"],
         multiplier_active=supply["multiplier_active"],
-        burn_enabled=has(roles["burn"]),
+        burn_enabled=capability(roles["burn"], ge["burn"]),
         # transfer policy (memo_required dropped — no analog in B20)
         policy_registry_active=policy["policy_registry_active"],
         can_freeze=policy["can_freeze"],
-        can_seize=has(roles["burn_blocked"]),
-        can_pause=has(pause),
+        can_seize=capability(roles["burn_blocked"], ge["burn_blocked"]),
+        can_pause=capability(pause, ge["pause"]),
         is_paused=policy["is_paused"],
         asymmetric_policy=policy["asymmetric_policy"],
         # provenance (factory.isB20 — no token-side factory() getter exists)
