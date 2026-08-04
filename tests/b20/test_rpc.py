@@ -296,3 +296,89 @@ def test_config_per_chain_env_routes_endpoint(monkeypatch):
 def test_zero_config_is_todays_public_endpoint(monkeypatch):
     monkeypatch.delenv("B20_RPC_URL_8453", raising=False)
     assert resolve_rpc_endpoint(8453) == CHAIN_RPC_ENDPOINTS[8453]
+
+
+# ── getLogs range-cap classification (provider limit → last_error_kind) ───────
+# A getLogs range/size rejection is DEFINITIVE (never retried) but must be
+# CLASSIFIED so the reader can fall back to the fixed chunk walk and the scan
+# can surface the provider's own words. Manifests three ways across providers:
+#   -32600 "…up to a 10 block range…"        (Alchemy Free tier)
+#   -32602 "query exceeds max block range 2000" (public base.org sepolia)
+#   -32602 "Log response size exceeded…"     (Alchemy PAYG log-count cap)
+#   HTTP 413 Payload Too Large                (public base.org mainnet, wide range)
+from acpsec_api.b20.rpc import RANGE_CAP_KIND  # noqa: E402
+
+_ALCHEMY_FREE = {
+    "code": -32600,
+    "message": ("Under the Free tier plan, you can make eth_getLogs requests with "
+                "up to a 10 block range. Based on your parameters, this block range "
+                "should work: [0x2f00000, 0x2f00009]. Upgrade to PAYG for expanded "
+                "block range."),
+}
+
+
+def test_getlogs_range_cap_32600_classified_verbatim_and_not_retried():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        return {"jsonrpc": "2.0", "id": 1, "error": _ALCHEMY_FREE}
+
+    c = _retry_client(transport)
+    assert c.eth_get_logs({"address": "0x", "fromBlock": "0x0", "toBlock": "0x64"}) is None
+    assert c.last_error_kind == RANGE_CAP_KIND
+    assert "10 block range" in c.last_error          # provider's own words, verbatim
+    assert len(calls) == 1                            # definitive — never retried
+
+
+def test_getlogs_public_node_block_range_32602_classified():
+    def transport(payload):
+        return {"error": {"code": -32602, "message": "query exceeds max block range 2000"}}
+    c = _client(transport)
+    assert c.eth_get_logs({"address": "0x"}) is None
+    assert c.last_error_kind == RANGE_CAP_KIND
+
+
+def test_getlogs_payg_response_size_32602_classified():
+    def transport(payload):
+        return {"error": {"code": -32602, "message": "Log response size exceeded. Try a smaller range."}}
+    c = _client(transport)
+    assert c.eth_get_logs({"address": "0x"}) is None
+    assert c.last_error_kind == RANGE_CAP_KIND
+
+
+def test_http_413_classified_as_range_cap_and_not_retried():
+    calls = []
+
+    def transport(payload):
+        calls.append(1)
+        raise _http(413, "Payload Too Large")
+
+    c = _retry_client(transport)
+    assert c.eth_get_logs({"address": "0x"}) is None
+    assert c.last_error_kind == RANGE_CAP_KIND        # public mainnet over-range shape
+    assert len(calls) == 1                            # 413 is definitive, not transient
+
+
+def test_ordinary_revert_is_not_range_cap():
+    def transport(payload):
+        return {"error": {"code": -32000, "message": "execution reverted"}}
+    c = _client(transport)
+    assert c.eth_call("0x", "0x") is None
+    assert c.last_error_kind is None                  # a revert is data, not a range cap
+
+
+def test_success_clears_range_cap_kind():
+    # A prior range-cap must not stick: a subsequent success clears the kind.
+    seq = [
+        {"error": _ALCHEMY_FREE},
+        {"result": [{"topics": ["0xaa"]}]},
+    ]
+
+    def transport(payload):
+        return seq.pop(0)
+
+    c = _client(transport)
+    assert c.eth_get_logs({"address": "0x"}) is None and c.last_error_kind == RANGE_CAP_KIND
+    assert c.eth_get_logs({"address": "0x"}) == [{"topics": ["0xaa"]}]
+    assert c.last_error_kind is None

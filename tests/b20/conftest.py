@@ -39,6 +39,18 @@ class FakeRpc:
         self.role_logs: dict[str, list] = {}            # role (lower) -> [log]
         self.announcement_logs: list = []
         self.logs_fail: bool = False                    # simulate eth_getLogs failure
+        # Provider block-range cap emulation: when set, a getLogs whose
+        # (toBlock - fromBlock) exceeds it is REJECTED exactly as the real
+        # RpcClient classifies it — None + last_error_kind == "getlogs_range_cap".
+        self.max_getlogs_range: Optional[int] = None
+        self.range_cap_error: str = (
+            '{"code":-32600,"message":"Under the Free tier plan, you can make '
+            'eth_getLogs requests with up to a 10 block range."}'
+        )
+        # Mirror the RpcClient diagnostic surface the reader now consumes.
+        self.last_error: Optional[str] = None
+        self.last_error_kind: Optional[str] = None
+        self.getlogs_calls: list[dict] = []             # every getLogs filter (for assertions)
         self.calls: list[str] = []
         # eth_getCode-by-block support (creation-block binary search):
         # token (lower) -> (creation_block, code_hex); code appears at >= block.
@@ -69,21 +81,39 @@ class FakeRpc:
         return self.block_number
 
     def eth_get_logs(self, filter_obj: dict) -> Optional[list]:
+        self.getlogs_calls.append(filter_obj)
+        frm = int(filter_obj.get("fromBlock", "0x0"), 16)
+        to_raw = filter_obj.get("toBlock", "latest")
+        to = self.block_number if to_raw == "latest" else int(to_raw, 16)
+        # Provider range cap: a too-wide window is rejected + classified, exactly
+        # as RpcClient would — the reader must then fall back to the chunk walk.
+        if self.max_getlogs_range is not None and to - frm > self.max_getlogs_range:
+            self.last_error = f"rpc error: {self.range_cap_error}"
+            self.last_error_kind = "getlogs_range_cap"
+            return None
         if self.logs_fail:
+            self.last_error = "getlogs failed"
+            self.last_error_kind = None
             return None
         topics = filter_obj.get("topics", [])
         t0 = topics[0] if topics else None
-        if isinstance(t0, list):  # role query: [[GRANTED, REVOKED], role]
-            role = (topics[1] if len(topics) > 1 else "").lower()
-            cand = self.role_logs.get(role, [])
+        if isinstance(t0, list):  # role query
+            if len(topics) > 1:                       # per-role: [[GRANTED, REVOKED], role]
+                role = str(topics[1]).lower()
+                cand = self.role_logs.get(role, [])
+            else:                                     # MERGED: [[GRANTED, REVOKED]] — all roles
+                cand = [lg for logs in self.role_logs.values() for lg in logs]
         elif t0 == C.B20_EVENT_ANNOUNCEMENT:
             cand = self.announcement_logs
         else:
             cand = []
-        frm = int(filter_obj.get("fromBlock", "0x0"), 16)
-        to_raw = filter_obj.get("toBlock", "latest")
-        to = self.block_number if to_raw == "latest" else int(to_raw, 16)
+        self.last_error = None
+        self.last_error_kind = None
         return [lg for lg in cand if frm <= int(lg["blockNumber"], 16) <= to]
+
+    def set_max_getlogs_range(self, n: Optional[int]) -> "FakeRpc":
+        self.max_getlogs_range = n
+        return self
 
     # --- ergonomic programming helpers -----------------------------------
     def set_call(self, calldata_hex: str, result_hex: Optional[str]) -> "FakeRpc":

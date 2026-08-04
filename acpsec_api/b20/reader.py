@@ -18,7 +18,7 @@ from typing import Optional
 
 from . import constants as C
 from .models import ScanInputs
-from .rpc import RpcClient
+from .rpc import RANGE_CAP_KIND, RpcClient
 
 _WAD = 10**18  # multiplier precision; multiplier() != WAD means rebasing active
 
@@ -167,27 +167,52 @@ def factory_is_b20_initialized(rpc, token: str, chain_id: int) -> Optional[bool]
 # --------------------------------------------------------------------------
 # Chunked getLogs + role-holder reconstruction via event replay
 # --------------------------------------------------------------------------
-def chunked_get_logs(rpc, address: str, topics: list, chain_id: int, from_block: int = 0) -> Optional[list]:
-    """Aggregate eth_getLogs over [from_block, latest] in chain-appropriate
-    chunks (respecting public-RPC range caps). None if any chunk fails.
+def _get_logs_full_or_chunked(
+    rpc, address: str, topics: list, chain_id: int, from_block: int = 0
+) -> Optional[list]:
+    """Aggregate eth_getLogs over [from_block, latest], provider-agnostically.
 
-    NOTE: from_block defaults to 0; live use should start from the token's
-    creation block (B20Created / indexer) to avoid scanning all of history.
+    Attempt the WHOLE range in ONE query first — the cheapest path on a provider
+    that allows it (a single token's role/announcement events are tiny). Only if
+    the provider REJECTS the range with a classified range/size cap
+    (``rpc.last_error_kind == RANGE_CAP_KIND``: e.g. public base.org's 2000/10000
+    block cap, or Alchemy's block-range / response-size limits) do we fall back to
+    the fixed per-chain chunk walk. Any OTHER failure — or a chunk that still fails
+    — degrades to None (carrying ``rpc.last_error`` / ``last_error_kind``). No
+    adaptive halving, no retry budget: a hard 10-block-cap provider simply yields
+    an honest None rather than a chunk storm.
+
+    NOTE: from_block defaults to 0; live use starts from the token's creation block
+    to avoid scanning all of history.
     """
     latest = rpc.eth_block_number()
     if latest is None:
         return None
-    size = _LOG_BLOCK_CHUNK.get(chain_id, 2000)
-    out: list = []
-    start = from_block
-    while start <= latest:
-        end = min(start + size - 1, latest)
-        chunk = rpc.eth_get_logs({
+
+    def query(start: int, end: int) -> Optional[list]:
+        return rpc.eth_get_logs({
             "address": address,
             "topics": topics,
             "fromBlock": hex(start),
             "toBlock": hex(end),
         })
+
+    # 1) One full-range query — a single getLogs on any provider that permits it.
+    full = query(from_block, latest)
+    if full is not None:
+        return full
+    # Fall back to chunking ONLY for a definitive range/size rejection; a
+    # transient-exhausted or otherwise-definitive failure stays honestly unknown.
+    if getattr(rpc, "last_error_kind", None) != RANGE_CAP_KIND:
+        return None
+
+    # 2) Existing fixed per-chain chunk walk (public-RPC block-range caps).
+    size = _LOG_BLOCK_CHUNK.get(chain_id, 2000)
+    out: list = []
+    start = from_block
+    while start <= latest:
+        end = min(start + size - 1, latest)
+        chunk = query(start, end)
         if chunk is None:
             return None
         out.extend(chunk)
@@ -240,7 +265,7 @@ def role_holders_detailed(
     ``from_block`` bounds the scan; read_token passes the token's creation block.
     """
     topics = [[C.B20_EVENT_ROLE_GRANTED, C.B20_EVENT_ROLE_REVOKED], role]
-    logs = chunked_get_logs(rpc, token, topics, chain_id, from_block=from_block)
+    logs = _get_logs_full_or_chunked(rpc, token, topics, chain_id, from_block=from_block)
     if logs is None:
         return None, None
     logs.sort(key=lambda lg: (int(lg["blockNumber"], 16), int(lg.get("logIndex", "0x0"), 16)))
@@ -274,20 +299,80 @@ def role_holders(rpc, token: str, role: str, chain_id: int, from_block: int = 0)
     return holders
 
 
+def _range_cap_reason(rpc, what: str) -> Optional[str]:
+    """A human diagnostic if the last aggregated getLogs was rejected by a provider
+    range/size cap, else None. Read IMMEDIATELY after the failing aggregation (before
+    any later RPC overwrites ``last_error_kind``). Carries the provider string
+    verbatim so the limit is diagnosable from the scan, not the provider dashboard.
+    """
+    if getattr(rpc, "last_error_kind", None) != RANGE_CAP_KIND:
+        return None
+    return f"{what} unavailable: provider getLogs range cap. {getattr(rpc, 'last_error', None)}"
+
+
+def role_holders_all(
+    rpc, token: str, chain_id: int, from_block: int = 0
+) -> Optional[dict[str, tuple[list[str], Optional[str]]]]:
+    """ALL roles from ONE merged getLogs → {role_hash_lower: (holders, first_grantee)}.
+
+    topic0 in [RoleGranted, RoleRevoked] with NO role filter, demuxed client-side by
+    topics[1] (the indexed role) / topics[2] (the indexed account). Cuts the five
+    per-role replays to a single query while keeping identical per-role semantics.
+    None on RPC failure. A role ABSENT from the returned dict simply had no events
+    in range (its holders are known-empty); the caller maps that to []. ``holders``
+    is net of grants/revokes; ``first_grantee`` is the earliest RoleGranted account.
+    """
+    topics = [[C.B20_EVENT_ROLE_GRANTED, C.B20_EVENT_ROLE_REVOKED]]
+    logs = _get_logs_full_or_chunked(rpc, token, topics, chain_id, from_block=from_block)
+    if logs is None:
+        return None
+    logs.sort(key=lambda lg: (int(lg["blockNumber"], 16), int(lg.get("logIndex", "0x0"), 16)))
+    granted = C.B20_EVENT_ROLE_GRANTED.lower()
+    revoked = C.B20_EVENT_ROLE_REVOKED.lower()
+    by_role: dict[str, tuple[list[str], Optional[str]]] = {}
+    for lg in logs:
+        tl = lg.get("topics", [])
+        if len(tl) < 3:
+            continue
+        role = str(tl[1]).lower()
+        acct = _decode_address(tl[2])
+        if acct is None:
+            continue
+        holders, first = by_role.get(role, ([], None))
+        ev = str(tl[0]).lower()
+        if ev == granted:
+            if first is None:
+                first = acct
+            if acct not in holders:
+                holders.append(acct)
+        elif ev == revoked and acct in holders:
+            holders.remove(acct)
+        by_role[role] = (holders, first)
+    return by_role
+
+
 def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
-    # DEFAULT_ADMIN via the detailed replay so we also capture the first grantee
-    # (the origin issuer-proxy fallback for fully-revoked admins) from the same
-    # getLogs — no extra RPC.
-    admin, admin_first_grantee = role_holders_detailed(
-        rpc, token, C.B20_ROLE_DEFAULT_ADMIN, chain_id, from_block
-    )
+    # ONE merged getLogs for every role (topic0 [Granted,Revoked], no role filter),
+    # demuxed client-side — 1 query instead of 5, identical per-role semantics. The
+    # DEFAULT_ADMIN first grantee (origin issuer-proxy fallback for fully-revoked
+    # admins) comes from the same replay.
+    all_roles = role_holders_all(rpc, token, chain_id, from_block)
+    read_error = _range_cap_reason(rpc, "Role reads") if all_roles is None else None
+
+    def detailed(role_hash: str) -> tuple[Optional[list[str]], Optional[str]]:
+        if all_roles is None:      # merged read failed -> every role unknown
+            return None, None
+        return all_roles.get(role_hash.lower(), ([], None))  # absent -> known-empty
+
+    admin, admin_first_grantee = detailed(C.B20_ROLE_DEFAULT_ADMIN)
     return {
         "admin": admin,
         "admin_first_grantee": admin_first_grantee,
-        "mint": role_holders(rpc, token, C.B20_ROLE_MINT, chain_id, from_block),
-        "burn": role_holders(rpc, token, C.B20_ROLE_BURN, chain_id, from_block),
-        "burn_blocked": role_holders(rpc, token, C.B20_ROLE_BURN_BLOCKED, chain_id, from_block),
-        "pause": role_holders(rpc, token, C.B20_ROLE_PAUSE, chain_id, from_block),
+        "mint": detailed(C.B20_ROLE_MINT)[0],
+        "burn": detailed(C.B20_ROLE_BURN)[0],
+        "burn_blocked": detailed(C.B20_ROLE_BURN_BLOCKED)[0],
+        "pause": detailed(C.B20_ROLE_PAUSE)[0],
+        "read_error": read_error,
     }
 
 
@@ -381,8 +466,9 @@ def read_origin(
         if txc is not None:
             issuer_has_history = txc > 0
 
-    logs = chunked_get_logs(rpc, token, [C.B20_EVENT_ANNOUNCEMENT], chain_id, from_block=from_block)
+    logs = _get_logs_full_or_chunked(rpc, token, [C.B20_EVENT_ANNOUNCEMENT], chain_id, from_block=from_block)
     announcement_events = None if logs is None else len(logs) > 0
+    announcement_read_error = _range_cap_reason(rpc, "Announcement reads") if logs is None else None
 
     return {
         "issuer_wallet_age_days": None,  # TO BE IMPLEMENTED — needs archive node / indexer
@@ -390,6 +476,7 @@ def read_origin(
         "verified_entity": None,         # V1 placeholder (registry)
         "public_docs": None,             # V1 placeholder (off-chain)
         "announcement_events": announcement_events,
+        "announcement_read_error": announcement_read_error,
     }
 
 
@@ -447,6 +534,15 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     def has(holders: Optional[list[str]]) -> Optional[bool]:
         return None if holders is None else len(holders) > 0
 
+    # Read provenance: source-keyed reasons a getLogs read was capped (verbatim
+    # provider string). The engine maps each source to the unrated dimension(s) it
+    # explains. Empty on a clean scan.
+    read_diagnostics: dict[str, str] = {}
+    if roles.get("read_error"):
+        read_diagnostics["roles"] = roles["read_error"]
+    if origin.get("announcement_read_error"):
+        read_diagnostics["announcements"] = origin["announcement_read_error"]
+
     deployed_via_factory = C.OFFICIAL_FACTORY_ADDRESS.get(chain_id) if isb20 is True else None
 
     return ScanInputs(
@@ -486,4 +582,5 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         verified_entity=origin["verified_entity"],
         public_docs=origin["public_docs"],
         announcement_events=origin["announcement_events"],
+        read_diagnostics=read_diagnostics,
     )
