@@ -152,3 +152,50 @@ def test_classify_multisig_eoa_vs_contract():
     assert R._classify_multisig(f, [A2]) is True
     assert R._classify_multisig(f, None) is None
     assert R._classify_multisig(f, []) is None
+
+
+# ── B20_GETLOGS_CHUNK_<chain_id>: fallback chunk-size env override ────────────
+# The full-first→chunk fallback (PR #32) walked at the hardcoded public-endpoint
+# size. A provider that allows wider ranges than the public cap (e.g. CDP: 100k)
+# should be able to walk in bigger windows — far fewer getLogs — via env, with
+# zero-config unchanged.
+def test_resolve_getlogs_chunk_env_override(monkeypatch):
+    monkeypatch.setenv("B20_GETLOGS_CHUNK_8453", "100000")
+    assert R.resolve_getlogs_chunk(8453) == 100_000
+
+
+def test_resolve_getlogs_chunk_zero_config_is_todays_default(monkeypatch):
+    monkeypatch.delenv("B20_GETLOGS_CHUNK_8453", raising=False)
+    monkeypatch.delenv("B20_GETLOGS_CHUNK_84532", raising=False)
+    assert R.resolve_getlogs_chunk(8453) == 10_000    # _LOG_BLOCK_CHUNK mainnet
+    assert R.resolve_getlogs_chunk(84532) == 2_000    # _LOG_BLOCK_CHUNK sepolia
+
+
+def test_resolve_getlogs_chunk_invalid_value_falls_back(monkeypatch):
+    monkeypatch.setenv("B20_GETLOGS_CHUNK_8453", "not-an-int")
+    assert R.resolve_getlogs_chunk(8453) == 10_000
+    monkeypatch.setenv("B20_GETLOGS_CHUNK_8453", "0")   # non-positive -> default
+    assert R.resolve_getlogs_chunk(8453) == 10_000
+
+
+def test_getlogs_chunk_env_resizes_fallback_windows(monkeypatch):
+    # Provider caps the full range but allows 100k windows (CDP-style): the fallback
+    # walks in 100k-block windows, not the 10k public default -> ~10x fewer queries.
+    monkeypatch.setenv("B20_GETLOGS_CHUNK_8453", "100000")
+    f = FakeRpc(8453).set_block_number(250_000).set_max_getlogs_range(100_000)
+    f.grant_role(MINT, A1, 150_000)
+    assert R.role_holders(f, ASSET, MINT, 8453) == [A1]
+    windows = f.getlogs_calls[1:]                      # [0] is the rejected full query
+    spans = [int(w["toBlock"], 16) - int(w["fromBlock"], 16) for w in windows]
+    assert spans[0] == 99_999                          # 100k chunk (size-1), not 9_999
+    assert len(windows) == 3                           # ceil(250_001 / 100_000)
+
+
+def test_getlogs_chunk_default_windows_when_unset(monkeypatch):
+    # Guard: with no env var, the fallback keeps today's per-chain sizes exactly.
+    monkeypatch.delenv("B20_GETLOGS_CHUNK_8453", raising=False)
+    f = FakeRpc(8453).set_block_number(25_000).set_max_getlogs_range(10_000)
+    f.grant_role(MINT, A1, 15_000)
+    assert R.role_holders(f, ASSET, MINT, 8453) == [A1]
+    spans = [int(w["toBlock"], 16) - int(w["fromBlock"], 16) for w in f.getlogs_calls[1:]]
+    assert spans[0] == 9_999                           # today's 10k mainnet default

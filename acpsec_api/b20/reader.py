@@ -14,6 +14,7 @@ unrated. read_token raises ``B20Unavailable`` only for DEFINITIVE negatives
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from . import constants as C
@@ -23,7 +24,29 @@ from .rpc import RANGE_CAP_KIND, RpcClient
 _WAD = 10**18  # multiplier precision; multiplier() != WAD means rebasing active
 
 # Per-chain getLogs block-range cap (public RPC limits): Sepolia 2000, mainnet 10000.
+# The fallback chunk walk uses resolve_getlogs_chunk() so a provider that allows
+# wider ranges (e.g. Coinbase CDP: 100000) can override this per chain via env.
 _LOG_BLOCK_CHUNK = {8453: 10000, 84532: 2000}
+
+
+def resolve_getlogs_chunk(chain_id: int) -> int:
+    """Fallback chunk size (blocks) for the range-cap chunk walk.
+
+    ``B20_GETLOGS_CHUNK_<chain_id>`` (a positive int) overrides the public-endpoint
+    default in ``_LOG_BLOCK_CHUNK``. Zero-config == today's sizes; set it to a
+    provider's own getLogs range cap (e.g. Coinbase CDP's 100000) so the fallback
+    walks in far fewer, wider windows. A missing / non-integer / non-positive value
+    falls back to the default. Mirrors ``rpc.resolve_rpc_endpoint``'s per-chain env.
+    """
+    raw = os.environ.get(f"B20_GETLOGS_CHUNK_{chain_id}", "").strip()
+    if raw:
+        try:
+            n = int(raw)
+        except ValueError:
+            n = 0
+        if n > 0:
+            return n
+    return _LOG_BLOCK_CHUNK.get(chain_id, 2000)
 
 _VARIANT_BY_BYTE = {0: "ASSET", 1: "STABLECOIN"}
 
@@ -206,8 +229,9 @@ def _get_logs_full_or_chunked(
     if getattr(rpc, "last_error_kind", None) != RANGE_CAP_KIND:
         return None
 
-    # 2) Existing fixed per-chain chunk walk (public-RPC block-range caps).
-    size = _LOG_BLOCK_CHUNK.get(chain_id, 2000)
+    # 2) Existing fixed per-chain chunk walk (public-RPC block-range caps), size
+    # overridable per chain via B20_GETLOGS_CHUNK_<chain_id> for wider-range providers.
+    size = resolve_getlogs_chunk(chain_id)
     out: list = []
     start = from_block
     while start <= latest:
