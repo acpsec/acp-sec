@@ -13,6 +13,7 @@ ADMIN = "0x" + "a1" * 20
 MINT_H = "0x" + "a2" * 20
 BURN_H = "0x" + "a3" * 20
 PAUSE_H = "0x" + "a4" * 20
+SEIZE_H = "0x" + "a5" * 20
 _AT = "2026-06-26T00:00:00Z"
 
 
@@ -28,6 +29,11 @@ def _good_asset() -> FakeRpc:
     f.grant_role(C.B20_ROLE_MINT, MINT_H, 2)
     f.grant_role(C.B20_ROLE_BURN, BURN_H, 3)
     f.grant_role(C.B20_ROLE_PAUSE, PAUSE_H, 4)
+    # burn_blocked (seize) granted then fully revoked -> can_seize KNOWN-false (a
+    # grant WAS observed), not inferred from silence (#34). Keeps the fixture fully
+    # rated with can_seize=False.
+    f.grant_role(C.B20_ROLE_BURN_BLOCKED, SEIZE_H, 5)
+    f.revoke_role(C.B20_ROLE_BURN_BLOCKED, SEIZE_H, 6)
     # supply (finite cap, not rebasing)
     f.set_selector(C.B20_SELECTOR_SUPPLY_CAP, "0x" + R.enc_uint(10**24))
     f.set_selector(C.B20_SELECTOR_MULTIPLIER, "0x" + R.enc_uint(10**18))
@@ -302,3 +308,45 @@ def test_permanently_rate_limited_rpc_unrates_honestly():
     res = assess(R.read_token(ASSET, 84532, rpc=rpc))
     assert res.rated is False
     assert set(res.unrated_dimensions) == set(res.dimensions)  # all dimensions unrated
+
+
+# --------------------------------------------------------------------------
+# #34: B20 emits NO RoleGranted events, so an empty role replay is NOT proof of
+# revocation. A NEVER-granted role must be UNKNOWN (unrated), not "revoked"/False —
+# else issuer_authority rates 100 @0.30 on silence. The granted-then-revoked path
+# (#25) is preserved: a grant WAS observed, so [] is genuinely revoked.
+# --------------------------------------------------------------------------
+def _no_role_events_asset() -> FakeRpc:
+    """A B20 token exactly like _good_asset but emitting NO role events — the real
+    mainnet B20 shape (role state is precompile-internal, never in RoleGranted logs)."""
+    f = _good_asset()
+    f.role_logs = {}   # merged replay -> {} (empty, never granted)
+    return f
+
+
+def test_never_granted_admin_is_unknown_not_revoked():
+    inp = R.read_token(ASSET, 84532, rpc=_no_role_events_asset())
+    assert inp.admin_holders == []
+    assert inp.admin_roles_revoked is None                 # silence != revoked
+    assert assess(inp).dimensions["issuer_authority"].rated is False
+
+
+def test_never_granted_roles_make_capabilities_unknown():
+    inp = R.read_token(ASSET, 84532, rpc=_no_role_events_asset())
+    assert inp.can_seize is None                           # not False
+    assert inp.can_pause is None
+    assert assess(inp).dimensions["transfer_policy"].rated is False
+
+
+def test_never_granted_roles_surface_read_diagnostic():
+    d = assess(R.read_token(ASSET, 84532, rpc=_no_role_events_asset())).to_dict()
+    diag = d["read_diagnostics"]
+    assert "issuer_authority" in diag and "transfer_policy" in diag
+    assert "not determinable" in diag["issuer_authority"].lower()
+
+
+def test_granted_then_revoked_admin_still_reads_revoked():
+    # #25 preserved: a grant WAS observed then fully revoked -> KNOWN revoked, rated.
+    inp = R.read_token(ASSET, 84532, rpc=_revoked_admin_asset())
+    assert inp.admin_holders == [] and inp.admin_roles_revoked is True
+    assert assess(inp).dimensions["issuer_authority"].rated is True
