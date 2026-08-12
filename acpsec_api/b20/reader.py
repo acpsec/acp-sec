@@ -649,6 +649,9 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         # #37: can_seize is the SEIZE_ROLE power (gates seizeWithMemo), NOT
         # BURN_BLOCKED_ROLE (blocked-burn). Same #34 tri-state as every capability.
         can_seize=capability(roles["seize"], ge["seize"]),
+        # #37 follow-up: blocked-burn surfaced as its own capability (read-only,
+        # unscored). Same demuxed role + #34 tri-state — no extra RPC.
+        can_burn_blocked=capability(roles["burn_blocked"], ge["burn_blocked"]),
         can_pause=capability(pause, ge["pause"]),
         is_paused=policy["is_paused"],
         asymmetric_policy=policy["asymmetric_policy"],

@@ -13,6 +13,7 @@ def _sample_result() -> ScanResult:
     powers = IssuerPowers(
         can_freeze=True,
         can_seize=True,
+        can_burn_blocked=False,
         can_pause=True,
         can_mint_unbounded=False,
         supply_cap="1000000000000000000000000",
@@ -76,9 +77,9 @@ def test_dimensions_serialized_as_score_weight_findings():
 def test_issuer_powers_block_keys():
     d = _sample_result().to_dict()
     assert set(d["issuer_powers"].keys()) == {
-        "can_freeze", "can_seize", "can_pause", "can_mint_unbounded",
-        "supply_cap", "admin_addresses", "admin_is_multisig",
-        "mint_role_holders", "pause_role_holders",
+        "can_freeze", "can_seize", "can_burn_blocked", "can_pause",
+        "can_mint_unbounded", "supply_cap", "admin_addresses",
+        "admin_is_multisig", "mint_role_holders", "pause_role_holders",
     }
     assert d["issuer_powers"]["can_freeze"] is True
     assert d["issuer_powers"]["supply_cap"] == "1000000000000000000000000"

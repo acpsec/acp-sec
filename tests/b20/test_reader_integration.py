@@ -399,3 +399,54 @@ def test_burn_blocked_holder_alone_does_not_imply_can_seize():
     # BURN_BLOCKED_ROLE and returned True here — a false "cannot/​can seize".
     f = _asset_without_seize_events().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7)
     assert R.read_token(ASSET, 84532, rpc=f).can_seize is None
+
+
+# --------------------------------------------------------------------------
+# #37 follow-up (Option B): blocked-burn (BURN_BLOCKED_ROLE) is a coercive power
+# DISTINCT from seize — it destroys a blocked balance rather than moving it to a
+# SEIZE_RECEIVER_POLICY-gated address. Surface it as its own capability,
+# can_burn_blocked, with the same #34 tri-state (never-granted -> None). It is
+# READ-ONLY: not folded into can_seize, and earns no transfer_policy penalty
+# (whether it should is a separate scoring decision). Keeping it also preserves
+# visibility into legacy pre-Cobalt tokens.
+# --------------------------------------------------------------------------
+def test_can_burn_blocked_true_for_live_holder():
+    f = _good_asset().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7)
+    assert R.read_token(ASSET, 84532, rpc=f).can_burn_blocked is True
+
+
+def test_can_burn_blocked_false_when_granted_then_revoked():
+    f = _good_asset().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7)
+    f.revoke_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 8)
+    assert R.read_token(ASSET, 84532, rpc=f).can_burn_blocked is False
+
+
+def test_can_burn_blocked_none_when_never_granted():
+    # _good_asset grants no BURN_BLOCKED_ROLE events -> UNKNOWN (#34), not False.
+    assert R.read_token(ASSET, 84532, rpc=_good_asset()).can_burn_blocked is None
+
+
+def test_can_burn_blocked_is_independent_of_can_seize():
+    # A live BURN_BLOCKED holder sets can_burn_blocked=True but must NOT move
+    # can_seize (that is SEIZE_ROLE, granted-then-revoked in _good_asset -> False).
+    inp = R.read_token(ASSET, 84532, rpc=_good_asset().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7))
+    assert inp.can_burn_blocked is True
+    assert inp.can_seize is False
+
+
+def test_issuer_powers_exposes_can_burn_blocked():
+    # UI surface: can_burn_blocked appears in the issuer_powers block as its own
+    # capability chip, tri-state like the others.
+    f = _good_asset().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7)
+    d = assess(R.read_token(ASSET, 84532, rpc=f)).to_dict()
+    assert d["issuer_powers"]["can_burn_blocked"] is True
+
+
+def test_can_burn_blocked_does_not_change_transfer_policy_score():
+    # Guard: can_burn_blocked is READ-ONLY. Adding a live BURN_BLOCKED holder must
+    # not change the transfer_policy score or its rated flag (no penalty wired) —
+    # whether it earns one is a separate scoring decision.
+    base = assess(R.read_token(ASSET, 84532, rpc=_good_asset()))
+    bb = assess(R.read_token(ASSET, 84532, rpc=_good_asset().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7)))
+    assert bb.dimensions["transfer_policy"].score == base.dimensions["transfer_policy"].score
+    assert bb.dimensions["transfer_policy"].rated is base.dimensions["transfer_policy"].rated

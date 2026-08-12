@@ -50,6 +50,7 @@ class DimensionResult:
 class IssuerPowers:
     can_freeze: Optional[bool]
     can_seize: Optional[bool]
+    can_burn_blocked: Optional[bool]   # blocked-burn (distinct from seize); read-only chip
     can_pause: Optional[bool]
     can_mint_unbounded: Optional[bool]
     supply_cap: Optional[str]
@@ -62,6 +63,7 @@ class IssuerPowers:
         return {
             "can_freeze": self.can_freeze,
             "can_seize": self.can_seize,
+            "can_burn_blocked": self.can_burn_blocked,
             "can_pause": self.can_pause,
             "can_mint_unbounded": self.can_mint_unbounded,
             "supply_cap": self.supply_cap,
@@ -156,6 +158,10 @@ class ScanInputs:
     policy_registry_active: Optional[bool] = None
     can_freeze: Optional[bool] = None
     can_seize: Optional[bool] = None
+    # blocked-burn (BURN_BLOCKED_ROLE): a coercive power DISTINCT from seize —
+    # destroys a blocked balance rather than moving it. Read-only surface (a UI
+    # capability chip); NOT folded into can_seize and NOT yet scored.
+    can_burn_blocked: Optional[bool] = None
     can_pause: Optional[bool] = None
     is_paused: Optional[bool] = None
     memo_required: Optional[bool] = None
