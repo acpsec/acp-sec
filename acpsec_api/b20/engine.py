@@ -114,6 +114,7 @@ def _issuer_powers(inp: ScanInputs) -> IssuerPowers:
     return IssuerPowers(
         can_freeze=inp.can_freeze,
         can_seize=inp.can_seize,
+        can_burn_blocked=inp.can_burn_blocked,
         can_pause=inp.can_pause,
         can_mint_unbounded=can_mint_unbounded,
         supply_cap=None if inp.supply_cap is None else str(inp.supply_cap),
