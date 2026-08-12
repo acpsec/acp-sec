@@ -76,6 +76,16 @@ def test_read_roles_reads_all_five():
     assert roles["pause"] == [A1]
 
 
+def test_read_roles_maps_seize_role():
+    # #37: SEIZE_ROLE is demuxed from the merged replay exactly like the other
+    # roles, with its granted_ever flag, so can_seize can key off the real seize
+    # power instead of BURN_BLOCKED_ROLE.
+    f = FakeRpc(84532).grant_role(C.B20_ROLE_SEIZE, A1, 5)
+    roles = R.read_roles(f, ASSET, 84532)
+    assert roles["seize"] == [A1]
+    assert roles["granted_ever"]["seize"] is True
+
+
 def test_from_block_excludes_earlier_grants():
     # Grants before from_block must not be scanned/counted; only later ones are.
     f = FakeRpc(84532).grant_role(MINT, A1, block=10).grant_role(MINT, A2, block=100)

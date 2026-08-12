@@ -400,13 +400,19 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
     admin, admin_first_grantee = detailed(C.B20_ROLE_DEFAULT_ADMIN)
     burn, burn_first = detailed(C.B20_ROLE_BURN)
     burn_blocked, burn_blocked_first = detailed(C.B20_ROLE_BURN_BLOCKED)
+    seize, seize_first = detailed(C.B20_ROLE_SEIZE)
     pause, pause_first = detailed(C.B20_ROLE_PAUSE)
     return {
         "admin": admin,
         "admin_first_grantee": admin_first_grantee,
         "mint": detailed(C.B20_ROLE_MINT)[0],
         "burn": burn,
+        # burn_blocked: the DEPRECATED blocked-burn role. It no longer feeds
+        # can_seize — that is SEIZE_ROLE now (#37). Retained as a demuxed signal
+        # (free from the same merged getLogs) pending a decision on its fate
+        # (drop, or surface blocked-burn as its own capability).
         "burn_blocked": burn_blocked,
+        "seize": seize,        # the real seize power (gates seizeWithMemo/Seized)
         "pause": pause,
         # Per-role "was a grant EVER observed?" (first_grantee is not None) —
         # distinguishes never-granted (unknown; B20 emits no role events) from
@@ -415,6 +421,7 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
             "admin": admin_first_grantee is not None,
             "burn": burn_first is not None,
             "burn_blocked": burn_blocked_first is not None,
+            "seize": seize_first is not None,
             "pause": pause_first is not None,
         },
         "read_error": read_error,
@@ -639,7 +646,9 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         # transfer policy (memo_required dropped — no analog in B20)
         policy_registry_active=policy["policy_registry_active"],
         can_freeze=policy["can_freeze"],
-        can_seize=capability(roles["burn_blocked"], ge["burn_blocked"]),
+        # #37: can_seize is the SEIZE_ROLE power (gates seizeWithMemo), NOT
+        # BURN_BLOCKED_ROLE (blocked-burn). Same #34 tri-state as every capability.
+        can_seize=capability(roles["seize"], ge["seize"]),
         can_pause=capability(pause, ge["pause"]),
         is_paused=policy["is_paused"],
         asymmetric_policy=policy["asymmetric_policy"],
