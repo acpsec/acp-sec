@@ -32,11 +32,15 @@ balance move before submission can invalidate it. `as_of_block` makes the stalen
   "verdict": "allow" | "deny" | "unavailable",
   "reasons": [ { "code": str, "detail": str, "scope": str|null, "policy_id": int|null } ],
   "as_of_block": int | null,          // eth_blockNumber at read time; staleness anchor
-  "evidence_tier": "verified" | "unknown"
+  "evidence_tier": "verified" | "unknown",
+  "deny_class": "policy" | "state" | "balance" | null   // deny only; null otherwise
 }
 ```
 - `allow`/`deny` → `evidence_tier: "verified"` (every load-bearing read succeeded at block *N*).
 - `unavailable` → `evidence_tier: "unknown"` (gate off, or a read failed — **never a false allow**).
+- **`deny_class`** discriminates *structural power* from *transient condition* for the integrator:
+  `policy` (isAuthorized false — "this address is blocked, contact the issuer") vs `state` (paused —
+  transient) vs `balance` (insufficient — "top up"). `null` for allow/unavailable. Same `reasons[]` shape.
 - 503 `rpc_unreachable` only for total unreachability / RPC construction failure (as in `/scan`).
 
 ## 3. Verdict algorithm — mirrors the mock's revert order
@@ -68,10 +72,10 @@ with the full transfer simulation (a zero-balance `from` reverts `InsufficientBa
 |------|---------|--------|
 | `not_cobalt` | unavailable | detail: "Cobalt surface not active on this chain" |
 | `read_failed` | unavailable | detail names the read (e.g. "isAuthorized(sender) read failed") |
-| `paused` | deny | scope: "TRANSFER" |
-| `policy_forbids` | deny | scope: TRANSFER_SENDER_POLICY \| TRANSFER_RECEIVER_POLICY; policy_id: uint64 |
-| `insufficient_balance` | deny | detail: "balance {b} < amount {a}" |
-| (allow → `reasons: []`) | allow | — |
+| `paused` | deny (`deny_class: state`) | scope: "TRANSFER" |
+| `policy_forbids` | deny (`deny_class: policy`) | scope: TRANSFER_SENDER_POLICY \| TRANSFER_RECEIVER_POLICY; policy_id: uint64 |
+| `insufficient_balance` | deny (`deny_class: balance`) | detail: "balance {b} < amount {a}" |
+| (allow → `reasons: []`) | allow | `deny_class: null` |
 
 ## 5. Module layout (to build in implementation — NOT yet created)
 
@@ -123,7 +127,11 @@ simulates the transfer, only reads).
    full anvil harness stood up now instead.
 3. **Gate is per-token** (`supportsInterface` is ERC-165 on the token), surfaced as the
    chain-level "Cobalt not active" message per the task's framing.
-4. **`0xa60bf13d` is the ERC-8056 *core* id** used as the Cobalt-activation proxy (per memory /
-   task direction). If the policy/seize surface later gets its own interface id, the gate can
-   tighten — noted, not blocking.
+4. **`0xa60bf13d` is the ERC-8056 *core* id used only as a Cobalt PROXY** — NOT proof the policy
+   surface is live. Weakened claim (confirmed): if the gate PASSES but `policyId`/`isAuthorized`
+   then revert, preflight MUST fall through to `unavailable(read_failed)` with a diagnostic —
+   never `allow`, never `not_cobalt` (guarded by `test_gate_passes_but_policy_read_reverts_*`).
+   **Assumption to re-verify live on Sepolia at Cobalt activation:** that `supportsInterface(0xa60bf13d)`
+   truly co-activates with the policy surface. If the policy/seize surface gets its own interface
+   id, tighten the gate to probe that instead.
 5. **Executor/seize scopes excluded** from v1 (ordinary transfers only), per task scope.

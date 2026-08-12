@@ -23,9 +23,10 @@ from typing import Callable
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from acpsec_api.b20.engine import assess
+from acpsec_api.b20.preflight import preflight
 from acpsec_api.b20.reader import B20Unavailable, read_token
 from acpsec_api.b20.rpc import RpcClient
 
@@ -48,9 +49,23 @@ def get_rpc_factory() -> Callable:
     return RpcClient
 
 
+def get_preflight_fn() -> Callable:
+    return preflight
+
+
 class B20ScanRequest(BaseModel):
     address: str
     chain_id: int
+
+
+class PreflightRequest(BaseModel):
+    # `from` is a Python keyword -> field `from_addr` with alias "from".
+    model_config = ConfigDict(populate_by_name=True)
+    token: str
+    chain_id: int
+    from_addr: str = Field(alias="from")
+    to: str
+    amount: str   # decimal string (uint256 can exceed JS safe-int); parsed to int
 
 
 def _error(status: int, error: str, detail: str) -> JSONResponse:
@@ -98,3 +113,39 @@ def b20_scan(
         )
 
     return scorer(inputs).to_dict()
+
+
+@router.post("/api/b20/preflight")
+def b20_preflight(
+    body: PreflightRequest,
+    preflight_fn=Depends(get_preflight_fn),
+    rpc_factory=Depends(get_rpc_factory),
+):
+    """Point-in-time transfer-authorization verdict. See docs/b20-preflight-design-v1.md."""
+    for label, addr in (("token", body.token), ("from", body.from_addr), ("to", body.to)):
+        if not _ADDRESS_RE.match(addr or ""):
+            return _error(
+                400, "invalid_address", f"{label} {addr!r} is not a 0x-prefixed 40-hex address."
+            )
+    if body.chain_id not in SUPPORTED_CHAINS:
+        return _error(
+            400, "unsupported_chain",
+            f"chain_id {body.chain_id} is not one of {list(SUPPORTED_CHAINS)}.",
+        )
+    try:
+        amount = int(body.amount)
+        if amount < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return _error(
+            400, "invalid_amount", f"amount {body.amount!r} is not a non-negative integer."
+        )
+
+    try:
+        rpc = rpc_factory(body.chain_id)
+    except Exception as exc:  # noqa: BLE001
+        return _error(
+            503, "rpc_unreachable", f"cannot initialise RPC for chain {body.chain_id}: {exc}"
+        )
+
+    return preflight_fn(body.token, body.chain_id, body.from_addr, body.to, amount, rpc=rpc).to_dict()

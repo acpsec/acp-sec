@@ -63,6 +63,7 @@ def test_preflight_returns_verdict_body():
                      "scope": "TRANSFER_SENDER_POLICY", "policy_id": 2}],
         "as_of_block": 123,
         "evidence_tier": "verified",
+        "deny_class": "policy",
     }
 
     class _V:

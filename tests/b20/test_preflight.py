@@ -111,14 +111,16 @@ def test_clear_transfer_allows():
     v = _run(_rpc()).to_dict()   # pids 0 (always-allow), not paused, balance ok
     assert v["verdict"] == "allow"
     assert v["reasons"] == []
+    assert v["deny_class"] is None
     assert v["evidence_tier"] == "verified"
     assert v["as_of_block"] == 100   # FakeRpc.block_number default
 
 
-# ── 3. Deny NAMES the blocking scope + policy_id ─────────────────────────
+# ── 3. Deny NAMES the blocking scope + policy_id, + deny_class discriminator ──
 def test_blocked_sender_denies_naming_scope():
     v = _run(_rpc(sender_pid=2, sender_auth=False)).to_dict()
     assert v["verdict"] == "deny"
+    assert v["deny_class"] == "policy"      # structural power ("contact the issuer")
     r = next(r for r in v["reasons"] if r["code"] == "policy_forbids")
     assert r["scope"] == "TRANSFER_SENDER_POLICY"
     assert r["policy_id"] == 2
@@ -128,6 +130,7 @@ def test_blocked_sender_denies_naming_scope():
 def test_blocked_receiver_denies_naming_scope():
     v = _run(_rpc(receiver_pid=3, receiver_auth=False)).to_dict()
     assert v["verdict"] == "deny"
+    assert v["deny_class"] == "policy"
     r = next(r for r in v["reasons"] if r["code"] == "policy_forbids")
     assert r["scope"] == "TRANSFER_RECEIVER_POLICY"
     assert r["policy_id"] == 3
@@ -155,12 +158,14 @@ def test_balance_checked_after_policy():
 def test_insufficient_balance_denies():
     v = _run(_rpc(from_bal=50), amount=100).to_dict()
     assert v["verdict"] == "deny"
+    assert v["deny_class"] == "balance"     # transient condition ("top up")
     assert any(r["code"] == "insufficient_balance" for r in v["reasons"])
 
 
 def test_paused_denies():
     v = _run(_rpc(paused=True)).to_dict()
     assert v["verdict"] == "deny"
+    assert v["deny_class"] == "state"       # transient condition (issuer paused transfers)
     assert any(r["code"] == "paused" for r in v["reasons"])
 
 
@@ -174,6 +179,20 @@ def test_isauthorized_read_failure_is_unavailable_not_allow():
     assert v["evidence_tier"] == "unknown"
 
 
+def test_gate_passes_but_policy_read_reverts_falls_through_to_unavailable():
+    # Refinement (3): supportsInterface(0xa60bf13d) is an ERC-8056-core proxy, NOT
+    # proof the policy surface is live. If the gate PASSES but a policy read then
+    # reverts/fails, that must be unavailable(read_failed) — never allow, never
+    # not_cobalt.
+    f = _rpc()
+    f.set_call(cd_policy_id(C.B20_POLICY_TRANSFER_SENDER), None)  # policyId reverts
+    v = _run(f).to_dict()
+    assert v["verdict"] == "unavailable"
+    codes = {r["code"] for r in v["reasons"]}
+    assert "read_failed" in codes
+    assert "not_cobalt" not in codes              # gate passed; this is a real read failure
+
+
 def test_balance_read_failure_is_unavailable_not_allow():
     f = _rpc()
     f.set_call(cd_balance(FROM), None)
@@ -185,6 +204,6 @@ def test_balance_read_failure_is_unavailable_not_allow():
 # ── 6. Response shape ────────────────────────────────────────────────────
 def test_response_shape_keys():
     v = _run(_rpc()).to_dict()
-    assert set(v.keys()) == {"verdict", "reasons", "as_of_block", "evidence_tier"}
+    assert set(v.keys()) == {"verdict", "reasons", "as_of_block", "evidence_tier", "deny_class"}
     for r in v["reasons"]:
         assert set(r.keys()) >= {"code", "detail"}
