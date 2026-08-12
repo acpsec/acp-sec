@@ -29,11 +29,11 @@ def _good_asset() -> FakeRpc:
     f.grant_role(C.B20_ROLE_MINT, MINT_H, 2)
     f.grant_role(C.B20_ROLE_BURN, BURN_H, 3)
     f.grant_role(C.B20_ROLE_PAUSE, PAUSE_H, 4)
-    # burn_blocked (seize) granted then fully revoked -> can_seize KNOWN-false (a
-    # grant WAS observed), not inferred from silence (#34). Keeps the fixture fully
-    # rated with can_seize=False.
-    f.grant_role(C.B20_ROLE_BURN_BLOCKED, SEIZE_H, 5)
-    f.revoke_role(C.B20_ROLE_BURN_BLOCKED, SEIZE_H, 6)
+    # SEIZE_ROLE granted then fully revoked -> can_seize KNOWN-false (a grant WAS
+    # observed), not inferred from silence (#34). Keeps the fixture fully rated
+    # with can_seize=False. (#37: seize is SEIZE_ROLE, not BURN_BLOCKED_ROLE.)
+    f.grant_role(C.B20_ROLE_SEIZE, SEIZE_H, 5)
+    f.revoke_role(C.B20_ROLE_SEIZE, SEIZE_H, 6)
     # supply (finite cap, not rebasing)
     f.set_selector(C.B20_SELECTOR_SUPPLY_CAP, "0x" + R.enc_uint(10**24))
     f.set_selector(C.B20_SELECTOR_MULTIPLIER, "0x" + R.enc_uint(10**18))
@@ -58,7 +58,7 @@ def test_read_token_full_populates_scaninputs():
     assert inp.supply_cap == 10**24 and inp.multiplier_active is False
     assert inp.burn_enabled is True          # BURN_ROLE has a holder
     assert inp.can_pause is True             # PAUSE_ROLE has a holder
-    assert inp.can_seize is False            # no BURN_BLOCKED_ROLE holder
+    assert inp.can_seize is False            # SEIZE_ROLE granted-then-revoked (KNOWN false)
     assert inp.can_freeze is True            # sender policy != 0
     assert inp.asymmetric_policy is True
     assert inp.is_paused is False
@@ -350,3 +350,52 @@ def test_granted_then_revoked_admin_still_reads_revoked():
     inp = R.read_token(ASSET, 84532, rpc=_revoked_admin_asset())
     assert inp.admin_holders == [] and inp.admin_roles_revoked is True
     assert assess(inp).dimensions["issuer_authority"].rated is True
+
+
+# --------------------------------------------------------------------------
+# #37: can_seize must derive from SEIZE_ROLE (the real seize power gating
+# seizeWithMemo/Seized), NOT BURN_BLOCKED_ROLE (blocked-burn). #34 tri-state is
+# preserved: a never-granted SEIZE_ROLE is UNKNOWN (None), never False.
+# --------------------------------------------------------------------------
+BB_H = "0x" + "bb" * 20
+
+
+def _asset_seize_slate() -> FakeRpc:
+    """Fully-rated asset with a blank seize slate — NO SEIZE_ROLE and NO (legacy)
+    BURN_BLOCKED_ROLE events — so can_seize is driven solely by the SEIZE_ROLE
+    events each test adds."""
+    f = _good_asset()
+    for role in (C.B20_ROLE_SEIZE, C.B20_ROLE_BURN_BLOCKED):
+        f.role_logs.pop(role.lower(), None)
+    return f
+
+
+def _asset_without_seize_events() -> FakeRpc:
+    """_good_asset with NO SEIZE_ROLE events — a token that never granted seize."""
+    f = _good_asset()
+    f.role_logs.pop(C.B20_ROLE_SEIZE.lower(), None)
+    return f
+
+
+def test_seize_role_holder_makes_can_seize_true():
+    f = _asset_seize_slate().grant_role(C.B20_ROLE_SEIZE, SEIZE_H, 7)
+    assert R.read_token(ASSET, 84532, rpc=f).can_seize is True
+
+
+def test_seize_role_granted_then_revoked_makes_can_seize_false():
+    f = _asset_seize_slate().grant_role(C.B20_ROLE_SEIZE, SEIZE_H, 7)
+    f.revoke_role(C.B20_ROLE_SEIZE, SEIZE_H, 8)
+    assert R.read_token(ASSET, 84532, rpc=f).can_seize is False
+
+
+def test_seize_role_never_granted_makes_can_seize_none():
+    # B20 emits no role events, so a never-granted SEIZE_ROLE is UNKNOWN, not False.
+    assert R.read_token(ASSET, 84532, rpc=_asset_without_seize_events()).can_seize is None
+
+
+def test_burn_blocked_holder_alone_does_not_imply_can_seize():
+    # Regression for the #37 false-safe: a LIVE BURN_BLOCKED_ROLE holder with NO
+    # SEIZE_ROLE must read can_seize UNKNOWN (None). The old code read seize off
+    # BURN_BLOCKED_ROLE and returned True here — a false "cannot/​can seize".
+    f = _asset_without_seize_events().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7)
+    assert R.read_token(ASSET, 84532, rpc=f).can_seize is None

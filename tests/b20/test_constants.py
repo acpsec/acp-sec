@@ -91,6 +91,14 @@ def test_role_and_policy_bytes32():
     assert C.B20_ROLE_BURN_BLOCKED == "0x7408fdc0d31c7bcb349eab611f5d1168acd4303574993f8cdc98b1cd18c41cae"
 
 
+def test_seize_role_is_distinct_from_burn_blocked():
+    # #37: the seize power is SEIZE_ROLE (governs seizeWithMemo/Seized), a DISTINCT
+    # role from BURN_BLOCKED_ROLE (blocked-burn). cast-verified keccak256("SEIZE_ROLE").
+    assert _is_bytes32(C.B20_ROLE_SEIZE)
+    assert C.B20_ROLE_SEIZE == "0x3469b8b0d89e9604f8510ed143f74a8336d22955d4f83e23bf53d9414e27f432"
+    assert C.B20_ROLE_SEIZE != C.B20_ROLE_BURN_BLOCKED
+
+
 def test_event_topics_are_bytes32():
     for name in ("ROLE_GRANTED", "ROLE_REVOKED", "ANNOUNCEMENT", "B20_CREATED"):
         assert _is_bytes32(getattr(C, f"B20_EVENT_{name}"))
