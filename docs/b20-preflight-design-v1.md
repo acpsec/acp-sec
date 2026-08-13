@@ -52,7 +52,7 @@ agrees with an `eth_call` simulation (§6). Verified order (base-std
 
 | # | Step | Read (all via `RpcClient`, non-raising → `None` on failure) | Outcome |
 |---|------|------------------------------------------------------------|---------|
-| 0 | **Activation gate FIRST** | `supportsInterface(0xa60bf13d)` on **token** | `None`→`unavailable`(read_failed) · `false`→`unavailable`(not_cobalt) · `true`→proceed |
+| 0 | **Activation gate FIRST** | `supportsInterface(0xa60bf13d)` on **token** | `false` **or a definitive revert** (chain answers "no ERC-165")→`unavailable`(not_cobalt) · **transport** failure (timeout/429/unreachable)→`unavailable`(read_failed) · `true`→proceed. The `None` split uses only the client's `any_response`+`last_error` signals (#41). |
 | 1 | Block anchor | `eth_blockNumber()` | record `as_of_block` (may be `null`) |
 | 2 | Pause | `isPaused(TRANSFER=0)` on token (`0xbc61e733`) | `None`→`unavailable` · `true`→`deny`(paused) |
 | 3 | Sender policy | `policyId(TRANSFER_SENDER_POLICY)` then, if `≠0`, `isAuthorized(pid, from)` on **PolicyRegistry `0x8453…0002`** (`0x55a1179e`) | any read `None`→`unavailable` · `false`→`deny`(policy_forbids, sender) |
@@ -70,7 +70,7 @@ with the full transfer simulation (a zero-balance `from` reverts `InsufficientBa
 
 | code | verdict | fields |
 |------|---------|--------|
-| `not_cobalt` | unavailable | detail: "Cobalt surface not active on this chain" |
+| `not_cobalt` | unavailable | detail: "Cobalt surface not active on this chain" (gate returned `false`) — or "activation probe reverted (no ERC-165) — Cobalt surface not active on this chain" when the probe **definitively reverts** (#41) |
 | `read_failed` | unavailable | detail names the read (e.g. "isAuthorized(sender) read failed") |
 | `paused` | deny (`deny_class: state`) | scope: "TRANSFER" |
 | `policy_forbids` | deny (`deny_class: policy`) | scope: TRANSFER_SENDER_POLICY \| TRANSFER_RECEIVER_POLICY; policy_id: uint64 |
@@ -134,4 +134,21 @@ simulates the transfer, only reads).
    **Assumption to re-verify live on Sepolia at Cobalt activation:** that `supportsInterface(0xa60bf13d)`
    truly co-activates with the policy surface. If the policy/seize surface gets its own interface
    id, tighten the gate to probe that instead.
+
+   **Live finding (#41, 2026-08-13) — the mocks return `false`, the real precompile REVERTS.** The
+   base-std mocks answer `supportsInterface → false` on a non-Cobalt token, so the original branch
+   was `false → not_cobalt`, `None → read_failed`. But the **real pre-Cobalt precompile** (mainnet
+   BRIAN `0xb2000000000000000000007bf6d5cbb0e24cb301`) **reverts** (`execution reverted`, selector
+   echoed `0x01ffc9a7`) — it never returns `false`. So the mock-shaped `false` branch alone was
+   insufficient: a real pre-Cobalt token took the `None` path and was mis-reported as `read_failed`
+   (transient — "retry might help") instead of `not_cobalt` (structural — "this chain isn't Cobalt").
+   The gate-`None` branch now splits by **why** the read failed, using only the client's existing
+   diagnostics — a **definitive revert** (`any_response` true *and* `last_error` names a revert: the
+   node answered, execution reverted) → `not_cobalt` with evidence in the detail; a **transport
+   failure** (timeout/429/unreachable — no contract-level answer) → `read_failed`, unchanged. Both
+   remain `unavailable`: the **no-false-allow property does not move**, and is explicitly guarded
+   (`test_gate_definitive_revert_is_not_cobalt_with_evidence`, `test_gate_timeout_is_read_failed`,
+   `test_gate_rate_limit_is_read_failed`, `test_gate_failure_never_allows_regardless_of_shape`; the
+   #40 gate-pass-then-policy-revert guard stays `read_failed`). No new error taxonomy was invented —
+   the split reads the same `any_response`/`last_error` the reader already consumes.
 5. **Executor/seize scopes excluded** from v1 (ordinary transfers only), per task scope.

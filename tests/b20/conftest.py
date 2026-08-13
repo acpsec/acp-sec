@@ -50,6 +50,7 @@ class FakeRpc:
         # Mirror the RpcClient diagnostic surface the reader now consumes.
         self.last_error: Optional[str] = None
         self.last_error_kind: Optional[str] = None
+        self.any_response: bool = False  # mirrors RpcClient: True once the node answered anything
         self.getlogs_calls: list[dict] = []             # every getLogs filter (for assertions)
         self.calls: list[str] = []
         # eth_getCode-by-block support (creation-block binary search):
