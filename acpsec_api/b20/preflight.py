@@ -63,6 +63,21 @@ def _balance_of(rpc, token: str, account: str) -> Optional[int]:
     return _decode_uint(rpc.eth_call(token, calldata(C.B20_SELECTOR_BALANCE_OF, enc_address(account))))
 
 
+def _probe_definitively_reverted(rpc) -> bool:
+    """True iff the activation probe failed because the chain gave a DEFINITIVE
+    answer — execution reverted (this contract has no ERC-165) — rather than a
+    TRANSPORT failure (timeout / 429 / unreachable node, where nothing answered).
+
+    Uses only the signals ``RpcClient`` already records: it saw a response at all
+    (``any_response``) AND the recorded error names a revert (``last_error``). A
+    rate-limit or timeout sets ``last_error`` but the error is not a revert (429 is
+    reachable but not a contract answer; a timeout leaves ``any_response`` False),
+    so both correctly fall through to ``read_failed``. No new classification is
+    invented here — see issue #41."""
+    last_error = (getattr(rpc, "last_error", None) or "").lower()
+    return bool(getattr(rpc, "any_response", False)) and "revert" in last_error
+
+
 # --- verdict constructors --------------------------------------------------
 def _unavailable(code: str, detail: str, as_of: Optional[int] = None) -> PreflightVerdict:
     return PreflightVerdict("unavailable", [PreflightReason(code, detail)], as_of, "unknown")
@@ -81,10 +96,19 @@ def preflight(
     if rpc is None:
         rpc = RpcClient(chain_id)
 
-    # 0) Activation gate FIRST. A failed read is unavailable(read_failed); a false
-    #    gate is unavailable(not_cobalt). (0xa60bf13d is only a Cobalt proxy.)
+    # 0) Activation gate FIRST. (0xa60bf13d is only a Cobalt proxy.) A `false` gate
+    #    is not_cobalt. A failed read splits by WHY it failed: a definitive revert —
+    #    the chain answering "this contract has no ERC-165" — is not_cobalt (the
+    #    mocks return false, but the real pre-Cobalt precompile REVERTS; see #41),
+    #    whereas a transport failure (timeout/429/unreachable) is read_failed. Both
+    #    stay `unavailable` — never a false allow.
     gate = _supports_interface(rpc, token, C.B20_IFACE_ERC8056)
     if gate is None:
+        if _probe_definitively_reverted(rpc):
+            return _unavailable(
+                "not_cobalt",
+                "activation probe reverted (no ERC-165) — Cobalt surface not active on this chain",
+            )
         return _unavailable("read_failed", "activation probe (supportsInterface) read failed")
     if gate is False:
         return _unavailable("not_cobalt", "Cobalt surface not active on this chain")

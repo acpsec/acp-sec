@@ -106,6 +106,66 @@ def test_gate_read_failure_is_unavailable_not_allow():
     assert any(r["code"] == "read_failed" for r in v["reasons"])
 
 
+# ── Activation-probe failure taxonomy (issue #41) ────────────────────────
+# A DEFINITIVE contract revert (chain answering "this contract has no ERC-165")
+# is not_cobalt; a TRANSPORT failure (timeout/429/unreachable — no contract
+# answer) stays read_failed. Both remain `unavailable` (no false allow).
+_REVERT_ERR = "rpc error: {'code': 3, 'message': 'execution reverted', 'data': '0x01ffc9a7'}"
+
+
+def _gate_fails(last_error, any_response):
+    """A fully-programmed token whose activation probe returns no value, with the
+    RpcClient diagnostic surface set to the given failure shape."""
+    f = _rpc()
+    f.set_call(cd_supports(), None)
+    f.last_error = last_error
+    f.any_response = any_response
+    return f
+
+
+def test_gate_definitive_revert_is_not_cobalt_with_evidence():
+    # Real precompile: execution reverted, selector echoed (0x01ffc9a7) — the chain
+    # DID answer "no ERC-165". This must be not_cobalt, not read_failed. #41.
+    f = _gate_fails(_REVERT_ERR, any_response=True)
+    v = _run(f).to_dict()
+    assert v["verdict"] == "unavailable"
+    codes = [r["code"] for r in v["reasons"]]
+    assert "not_cobalt" in codes and "read_failed" not in codes
+    detail = next(r["detail"] for r in v["reasons"] if r["code"] == "not_cobalt")
+    assert "revert" in detail.lower() and "erc-165" in detail.lower()
+    # short-circuit: no policy reads once the gate resolves not_cobalt
+    assert cd_policy_id(C.B20_POLICY_TRANSFER_SENDER) not in f.calls
+
+
+def test_gate_timeout_is_read_failed():
+    # Timeout: node never answered (any_response False) → transport, not a contract revert.
+    f = _gate_fails("TimeoutError: timed out", any_response=False)
+    v = _run(f).to_dict()
+    codes = [r["code"] for r in v["reasons"]]
+    assert v["verdict"] == "unavailable"
+    assert "read_failed" in codes and "not_cobalt" not in codes
+
+
+def test_gate_rate_limit_is_read_failed():
+    # 429 is REACHABLE (any_response True) but NOT a contract answer → read_failed,
+    # never mistaken for not_cobalt.
+    f = _gate_fails("http error: 429 Too Many Requests", any_response=True)
+    v = _run(f).to_dict()
+    codes = [r["code"] for r in v["reasons"]]
+    assert v["verdict"] == "unavailable"
+    assert "read_failed" in codes and "not_cobalt" not in codes
+
+
+def test_gate_failure_never_allows_regardless_of_shape():
+    # no-false-allow: neither a revert nor a transport failure may ever yield `allow`.
+    for f in (
+        _gate_fails(_REVERT_ERR, any_response=True),
+        _gate_fails("TimeoutError: timed out", any_response=False),
+        _gate_fails("http error: 429 Too Many Requests", any_response=True),
+    ):
+        assert _run(f).to_dict()["verdict"] == "unavailable"
+
+
 # ── 2. Clear transfer allows ─────────────────────────────────────────────
 def test_clear_transfer_allows():
     v = _run(_rpc()).to_dict()   # pids 0 (always-allow), not paused, balance ok
