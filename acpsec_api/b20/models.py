@@ -127,6 +127,43 @@ class ScanResult:
 
 
 # --------------------------------------------------------------------------
+# Preflight verdict models (POST /api/b20/preflight)
+# --------------------------------------------------------------------------
+@dataclass
+class PreflightReason:
+    code: str                       # not_cobalt | read_failed | paused | policy_forbids | insufficient_balance
+    detail: str
+    scope: Optional[str] = None     # e.g. TRANSFER_SENDER_POLICY / TRANSFER (pause)
+    policy_id: Optional[int] = None
+
+    def to_dict(self) -> dict:
+        return {"code": self.code, "detail": self.detail,
+                "scope": self.scope, "policy_id": self.policy_id}
+
+
+@dataclass
+class PreflightVerdict:
+    verdict: str                    # allow | deny | unavailable
+    reasons: list[PreflightReason] = field(default_factory=list)
+    as_of_block: Optional[int] = None
+    evidence_tier: str = "verified"     # verified (allow/deny) | unknown (unavailable)
+    # Deny discriminator: structural power vs transient condition. None unless deny.
+    #   policy  = isAuthorized false (a blocklist/allowlist decision — "contact issuer")
+    #   state   = paused (transient)
+    #   balance = insufficient (transient — "top up")
+    deny_class: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "verdict": self.verdict,
+            "reasons": [r.to_dict() for r in self.reasons],
+            "as_of_block": self.as_of_block,
+            "evidence_tier": self.evidence_tier,
+            "deny_class": self.deny_class,
+        }
+
+
+# --------------------------------------------------------------------------
 # Source-agnostic scoring inputs
 # --------------------------------------------------------------------------
 @dataclass

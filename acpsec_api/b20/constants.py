@@ -111,6 +111,18 @@ B20_SELECTOR_TRANSFER_RECEIVER_POLICY = "0x210f521b"
 B20_SELECTOR_TRANSFER_EXECUTOR_POLICY = "0x724e9c53"
 B20_SELECTOR_MINT_RECEIVER_POLICY = "0x6e5b013d"
 
+# --- Preflight surface (POST /api/b20/preflight) --------------------------
+# The Cobalt-activation gate + the transfer-authorization evaluator. See
+# docs/b20-preflight-design-v1.md. All cast-verified.
+B20_SELECTOR_SUPPORTS_INTERFACE = "0x01ffc9a7"  # ERC-165 supportsInterface(bytes4) -> bool
+# ERC-8056 core (IScaledUIAmount) interface id, used ONLY as a Cobalt-activation
+# PROXY — passing it is NOT proof the policy surface is live (a later policy read
+# that reverts must fall through to unavailable, never allow). Re-verify live on
+# Sepolia at Cobalt activation.
+B20_IFACE_ERC8056 = "0xa60bf13d"
+B20_SELECTOR_IS_AUTHORIZED = "0x55a1179e"       # PolicyRegistry.isAuthorized(uint64,address) -> bool
+B20_SELECTOR_BALANCE_OF = "0x70a08231"          # balanceOf(address) -> uint256
+
 # --- Asset-variant selectors (IB20Asset) ----------------------------------
 B20_SELECTOR_MULTIPLIER = "0x1b3ed722"        # multiplier() -> uint256 (WAD=1e18; != 1e18 => rebasing active)
 B20_SELECTOR_OPERATOR_ROLE = "0xf5b541a6"

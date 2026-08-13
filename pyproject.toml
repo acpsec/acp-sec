@@ -37,4 +37,5 @@ target-version = "py312"
 asyncio_mode = "auto"
 markers = [
     "network: live-RPC integration test — hits public Base RPC. Opt-in only: deselected/skipped by default, run with `-m network` and B20_LIVE_RPC set.",
+    "oracle: preflight self-checking oracle — boots anvil + base-std mocks. Skipped by default (needs forge/anvil + the preflight impl), run with `-m oracle`. CI fast lane runs `-m 'not oracle'`.",
 ]
