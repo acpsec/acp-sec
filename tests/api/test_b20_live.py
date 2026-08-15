@@ -21,6 +21,7 @@ Real-world fixture pair (validated against live chains):
   (8453) — a ClankerToken with a vanity CREATE2 prefix mimicking B20; not B20.
 """
 
+import json
 import os
 
 import pytest
@@ -89,3 +90,42 @@ def test_live_clanker_vanity_mainnet_is_not_b20():
     body = r.json()
     assert set(body.keys()) == {"error", "detail"}
     assert body["error"] == "not_b20"
+
+
+# --------------------------------------------------------------------------
+# Cobalt-activation CANARY (issue #41). POST /api/b20/preflight against the real
+# fixb20 on Sepolia and REPORT the raw verdict. We deliberately do NOT assert a
+# specific verdict: the Cobalt policy surface is not live on testnet yet, so today
+# the gate returns unavailable / not_cobalt. The moment this flips from not_cobalt
+# to a real allow|deny is our FIRST real-chain proof that Cobalt activated — the
+# trigger to run the #41 Sepolia re-verification of the gate assumption
+# (supportsInterface(0xa60bf13d) co-activating with the policy surface).
+# Assert only well-formedness; print the body (run with -s to see it).
+# --------------------------------------------------------------------------
+def test_live_preflight_canary_reports_verdict_fixb20_sepolia(capsys):
+    r = TestClient(fastapi_app).post(
+        "/api/b20/preflight",
+        json={
+            "token": FIXB20_SEPOLIA, "chain_id": 84532,
+            "from": "0x" + "11" * 20, "to": "0x" + "22" * 20, "amount": "1",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    # Well-formed only — never a specific verdict (surface not live yet).
+    assert set(body.keys()) == {"verdict", "reasons", "as_of_block", "evidence_tier", "deny_class"}
+    assert body["verdict"] in {"allow", "deny", "unavailable"}
+    assert isinstance(body["reasons"], list)
+    assert body["evidence_tier"] in {"verified", "unknown"}
+
+    # Report the raw verdict — the canary's whole point is the observed gate state.
+    with capsys.disabled():
+        print(f"\n[preflight canary] fixb20@sepolia (84532) -> {json.dumps(body)}")
+
+    # A tripwire, not an assertion on the value: when Cobalt is live this stops
+    # being not_cobalt. Kept as an informational marker, never a hard failure.
+    cobalt_active = body["verdict"] in {"allow", "deny"} or not any(
+        rr.get("code") == "not_cobalt" for rr in body["reasons"]
+    )
+    print(f"[preflight canary] cobalt_active_on_sepolia={cobalt_active}")
