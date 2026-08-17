@@ -18,7 +18,7 @@ import os
 from typing import Optional
 
 from . import constants as C
-from .models import ScanInputs
+from .models import EventEvidence, RoleHolderEvidence, ScanInputs, StateEvidence
 from .rpc import RANGE_CAP_KIND, RpcClient
 
 _WAD = 10**18  # multiplier precision; multiplier() != WAD means rebasing active
@@ -140,6 +140,10 @@ def _is_contract(rpc, addr: str) -> Optional[bool]:
     if code is None:
         return None
     return code not in ("0x", "0x0") and len(code) > 2
+
+
+def _has_role(rpc, token: str, role: str, holder: str) -> Optional[bool]:
+    return _decode_bool(rpc.eth_call(token, calldata(C.B20_SELECTOR_HAS_ROLE, word(role), enc_address(holder))))
 
 
 # --------------------------------------------------------------------------
@@ -336,15 +340,17 @@ def _range_cap_reason(rpc, what: str) -> Optional[str]:
 
 def role_holders_all(
     rpc, token: str, chain_id: int, from_block: int = 0
-) -> Optional[dict[str, tuple[list[str], Optional[str]]]]:
-    """ALL roles from ONE merged getLogs → {role_hash_lower: (holders, first_grantee)}.
+) -> Optional[dict[str, tuple[list[str], Optional[str], dict]]]:
+    """ALL roles from ONE merged getLogs → {role_hash_lower: (holders, first_grantee, holder_grants)}.
 
     topic0 in [RoleGranted, RoleRevoked] with NO role filter, demuxed client-side by
     topics[1] (the indexed role) / topics[2] (the indexed account). Cuts the five
     per-role replays to a single query while keeping identical per-role semantics.
     None on RPC failure. A role ABSENT from the returned dict simply had no events
-    in range (its holders are known-empty); the caller maps that to []. ``holders``
-    is net of grants/revokes; ``first_grantee`` is the earliest RoleGranted account.
+    in range (its holders are known-empty); the caller maps that to ([], None, {}).
+    ``holders`` is net of grants/revokes; ``first_grantee`` is the earliest RoleGranted
+    account; ``holder_grants`` maps each current holder to (tx_hash, block_number,
+    log_index) of the grant event that established their current hold.
     """
     topics = [[C.B20_EVENT_ROLE_GRANTED, C.B20_EVENT_ROLE_REVOKED]]
     logs = _get_logs_full_or_chunked(rpc, token, topics, chain_id, from_block=from_block)
@@ -353,7 +359,7 @@ def role_holders_all(
     logs.sort(key=lambda lg: (int(lg["blockNumber"], 16), int(lg.get("logIndex", "0x0"), 16)))
     granted = C.B20_EVENT_ROLE_GRANTED.lower()
     revoked = C.B20_EVENT_ROLE_REVOKED.lower()
-    by_role: dict[str, tuple[list[str], Optional[str]]] = {}
+    by_role: dict[str, tuple[list[str], Optional[str], dict]] = {}
     for lg in logs:
         tl = lg.get("topics", [])
         if len(tl) < 3:
@@ -362,16 +368,22 @@ def role_holders_all(
         acct = _decode_address(tl[2])
         if acct is None:
             continue
-        holders, first = by_role.get(role, ([], None))
+        holders, first, holder_grants = by_role.get(role, ([], None, {}))
         ev = str(tl[0]).lower()
         if ev == granted:
             if first is None:
                 first = acct
             if acct not in holders:
                 holders.append(acct)
+            holder_grants[acct] = (
+                lg.get("transactionHash"),
+                int(lg["blockNumber"], 16),
+                int(lg.get("logIndex", "0x0"), 16),
+            )
         elif ev == revoked and acct in holders:
             holders.remove(acct)
-        by_role[role] = (holders, first)
+            holder_grants.pop(acct, None)
+        by_role[role] = (holders, first, holder_grants)
     return by_role
 
 
@@ -384,7 +396,7 @@ ROLE_NOT_DETERMINABLE = (
 )
 
 
-def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
+def read_roles(rpc, token: str, chain_id: int, from_block: int = 0, *, as_of_block: Optional[int] = None) -> dict:
     # ONE merged getLogs for every role (topic0 [Granted,Revoked], no role filter),
     # demuxed client-side — 1 query instead of 5, identical per-role semantics. The
     # DEFAULT_ADMIN first grantee (origin issuer-proxy fallback for fully-revoked
@@ -392,20 +404,57 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
     all_roles = role_holders_all(rpc, token, chain_id, from_block)
     read_error = _range_cap_reason(rpc, "Role reads") if all_roles is None else None
 
-    def detailed(role_hash: str) -> tuple[Optional[list[str]], Optional[str]]:
+    def detailed(role_hash: str) -> tuple[Optional[list[str]], Optional[str], dict]:
         if all_roles is None:      # merged read failed -> every role unknown
-            return None, None
-        return all_roles.get(role_hash.lower(), ([], None))  # absent -> known-empty
+            return None, None, {}
+        return all_roles.get(role_hash.lower(), ([], None, {}))  # absent -> known-empty
 
-    admin, admin_first_grantee = detailed(C.B20_ROLE_DEFAULT_ADMIN)
-    burn, burn_first = detailed(C.B20_ROLE_BURN)
-    burn_blocked, burn_blocked_first = detailed(C.B20_ROLE_BURN_BLOCKED)
-    seize, seize_first = detailed(C.B20_ROLE_SEIZE)
-    pause, pause_first = detailed(C.B20_ROLE_PAUSE)
+    def _build_role_ev(role_hash: str, holders: Optional[list[str]], holder_grants: dict) -> list:
+        if not holders:
+            return []
+        result = []
+        for h in holders:
+            grant_info = holder_grants.get(h)
+            grant_ev = None
+            if grant_info:
+                tx, blk, li = grant_info
+                grant_ev = EventEvidence(tx_hash=tx, block_number=blk, log_index=li)
+            confirmed_raw = _has_role(rpc, token, role_hash, h)
+            has_role_ev = None
+            discrepancy = False
+            if confirmed_raw is not None:
+                has_role_ev = StateEvidence(block_number=as_of_block, confirmed=confirmed_raw)
+                if not confirmed_raw:
+                    discrepancy = True
+            result.append(RoleHolderEvidence(
+                address=h, grant=grant_ev, has_role=has_role_ev, discrepancy=discrepancy,
+            ))
+        return result
+
+    admin, admin_first_grantee, admin_grants = detailed(C.B20_ROLE_DEFAULT_ADMIN)
+    mint_holders, mint_first, mint_grants = detailed(C.B20_ROLE_MINT)
+    burn, burn_first, burn_grants = detailed(C.B20_ROLE_BURN)
+    burn_blocked, burn_blocked_first, burn_blocked_grants = detailed(C.B20_ROLE_BURN_BLOCKED)
+    seize, seize_first, seize_grants = detailed(C.B20_ROLE_SEIZE)
+    pause, pause_first, pause_grants = detailed(C.B20_ROLE_PAUSE)
+
+    role_evidence: dict[str, list] = {}
+    for role_hash, holders, grants in [
+        (C.B20_ROLE_DEFAULT_ADMIN, admin, admin_grants),
+        (C.B20_ROLE_MINT, mint_holders, mint_grants),
+        (C.B20_ROLE_BURN, burn, burn_grants),
+        (C.B20_ROLE_BURN_BLOCKED, burn_blocked, burn_blocked_grants),
+        (C.B20_ROLE_SEIZE, seize, seize_grants),
+        (C.B20_ROLE_PAUSE, pause, pause_grants),
+    ]:
+        ev_list = _build_role_ev(role_hash, holders, grants)
+        if ev_list:
+            role_evidence[role_hash.lower()] = ev_list
+
     return {
         "admin": admin,
         "admin_first_grantee": admin_first_grantee,
-        "mint": detailed(C.B20_ROLE_MINT)[0],
+        "mint": mint_holders,
         "burn": burn,
         # burn_blocked: the DEPRECATED blocked-burn role. It no longer feeds
         # can_seize — that is SEIZE_ROLE now (#37). Retained as a demuxed signal
@@ -425,6 +474,7 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0) -> dict:
             "pause": pause_first is not None,
         },
         "read_error": read_error,
+        "role_evidence": role_evidence,
     }
 
 
@@ -521,6 +571,14 @@ def read_origin(
     logs = _get_logs_full_or_chunked(rpc, token, [C.B20_EVENT_ANNOUNCEMENT], chain_id, from_block=from_block)
     announcement_events = None if logs is None else len(logs) > 0
     announcement_read_error = _range_cap_reason(rpc, "Announcement reads") if logs is None else None
+    announcement_evidence: list[EventEvidence] = []
+    if logs is not None:
+        for lg in logs:
+            announcement_evidence.append(EventEvidence(
+                tx_hash=lg.get("transactionHash"),
+                block_number=int(lg["blockNumber"], 16),
+                log_index=int(lg.get("logIndex", "0x0"), 16),
+            ))
 
     return {
         "issuer_wallet_age_days": None,  # TO BE IMPLEMENTED — needs archive node / indexer
@@ -529,6 +587,7 @@ def read_origin(
         "public_docs": None,             # V1 placeholder (off-chain)
         "announcement_events": announcement_events,
         "announcement_read_error": announcement_read_error,
+        "announcement_evidence": announcement_evidence,
     }
 
 
@@ -543,6 +602,8 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     """
     if rpc is None:
         rpc = RpcClient(chain_id)
+
+    as_of_block = rpc.eth_block_number()
 
     variant = decode_variant(address)
 
@@ -572,7 +633,7 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     else:
         from_block = creation_block
 
-    roles = read_roles(rpc, address, chain_id, from_block)
+    roles = read_roles(rpc, address, chain_id, from_block, as_of_block=as_of_block)
     admin = roles["admin"]
     pause = roles["pause"]
     supply = read_supply(rpc, address, variant)
@@ -621,6 +682,16 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
 
     deployed_via_factory = C.OFFICIAL_FACTORY_ADDRESS.get(chain_id) if isb20 is True else None
 
+    state_ev: dict[str, StateEvidence] = {}
+    if supply["supply_cap"] is not None:
+        state_ev["supply_cap"] = StateEvidence(
+            block_number=as_of_block, raw_value="0x" + enc_uint(supply["supply_cap"]),
+        )
+    if vc["decimals"] is not None:
+        state_ev["decimals"] = StateEvidence(
+            block_number=as_of_block, raw_value="0x" + enc_uint(vc["decimals"]),
+        )
+
     return ScanInputs(
         token=address,
         chain_id=chain_id,
@@ -665,4 +736,8 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         public_docs=origin["public_docs"],
         announcement_events=origin["announcement_events"],
         read_diagnostics=read_diagnostics,
+        as_of_block=as_of_block,
+        role_evidence=roles["role_evidence"],
+        announcement_evidence=origin["announcement_evidence"],
+        state_evidence=state_ev,
     )

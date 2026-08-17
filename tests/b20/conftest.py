@@ -138,19 +138,24 @@ class FakeRpc:
         return self
 
     # --- role-event mocking ----------------------------------------------
-    def add_role_event(self, role: str, event_topic: str, account: str, block: int, log_index: int = 0) -> "FakeRpc":
+    def add_role_event(
+        self, role: str, event_topic: str, account: str, block: int,
+        log_index: int = 0, tx: Optional[str] = None,
+    ) -> "FakeRpc":
         self.role_logs.setdefault(role.lower(), []).append({
             "topics": [event_topic, role, _topic_addr(account), _topic_addr(account)],
             "blockNumber": hex(block),
             "logIndex": hex(log_index),
+            # Real logs carry transactionHash; evidence retains it. Deterministic default.
+            "transactionHash": tx or ("0x" + f"{block:040x}{log_index:024x}"),
         })
         return self
 
-    def grant_role(self, role: str, account: str, block: int, log_index: int = 0) -> "FakeRpc":
-        return self.add_role_event(role, C.B20_EVENT_ROLE_GRANTED, account, block, log_index)
+    def grant_role(self, role: str, account: str, block: int, log_index: int = 0, tx: Optional[str] = None) -> "FakeRpc":
+        return self.add_role_event(role, C.B20_EVENT_ROLE_GRANTED, account, block, log_index, tx)
 
-    def revoke_role(self, role: str, account: str, block: int, log_index: int = 0) -> "FakeRpc":
-        return self.add_role_event(role, C.B20_EVENT_ROLE_REVOKED, account, block, log_index)
+    def revoke_role(self, role: str, account: str, block: int, log_index: int = 0, tx: Optional[str] = None) -> "FakeRpc":
+        return self.add_role_event(role, C.B20_EVENT_ROLE_REVOKED, account, block, log_index, tx)
 
     def set_role_holders(self, role: str, holders: list[str]) -> "FakeRpc":
         """Program current holders as one grant event each (ascending blocks)."""
@@ -164,7 +169,8 @@ class FakeRpc:
 
     def set_announcements(self, count: int) -> "FakeRpc":
         self.announcement_logs = [
-            {"topics": [C.B20_EVENT_ANNOUNCEMENT], "blockNumber": hex(i + 1), "logIndex": "0x0"}
+            {"topics": [C.B20_EVENT_ANNOUNCEMENT], "blockNumber": hex(i + 1), "logIndex": "0x0",
+             "transactionHash": "0x" + f"{i + 1:064x}"}
             for i in range(count)
         ]
         return self
@@ -180,6 +186,10 @@ class FakeRpc:
         return self
 
     # --- preflight mocking -----------------------------------------------
+    def set_has_role(self, role: str, holder: str, value: bool) -> "FakeRpc":
+        self.responses[R.calldata(C.B20_SELECTOR_HAS_ROLE, R.word(role), R.enc_address(holder))] = _bool_word(value)
+        return self
+
     def set_is_b20(self, token: str, value: bool) -> "FakeRpc":
         self.responses[R.calldata(C.B20_SELECTOR_IS_B20, R.enc_address(token))] = _bool_word(value)
         return self

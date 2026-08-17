@@ -16,6 +16,74 @@ from typing import Optional
 
 
 # --------------------------------------------------------------------------
+# On-chain evidence (Phase 1) — verifiable provenance for claims.
+# Two KINDS: `event` (from logs) and `state` (from an eth_call at a block).
+# NEVER fabricate a tx for a state read. See docs/b20-onchain-evidence-design-v1.md.
+# --------------------------------------------------------------------------
+@dataclass
+class EventEvidence:
+    """A claim backed by a log we already fetched (role grant/revoke, announcement)."""
+    tx_hash: Optional[str]
+    block_number: Optional[int]
+    log_index: Optional[int]
+
+    def to_dict(self) -> dict:
+        return {"kind": "event", "tx_hash": self.tx_hash,
+                "block_number": self.block_number, "log_index": self.log_index}
+
+
+@dataclass
+class StateEvidence:
+    """A claim backed by an eth_call at a block — re-runnable to verify. ``raw_value``
+    carries the read; ``confirmed`` carries a boolean cross-check (e.g. hasRole)."""
+    block_number: Optional[int]
+    raw_value: Optional[str] = None
+    confirmed: Optional[bool] = None
+
+    def to_dict(self) -> dict:
+        return {"kind": "state", "block_number": self.block_number,
+                "raw_value": self.raw_value, "confirmed": self.confirmed}
+
+
+@dataclass
+class RoleHolderEvidence:
+    """A current role holder with its provenance: the grant event that established it,
+    the revoke (audit trail), a hasRole state cross-check, and a discrepancy flag set
+    loudly when replay says held but hasRole() disagrees."""
+    address: str
+    grant: Optional[EventEvidence] = None
+    revoke: Optional[EventEvidence] = None
+    has_role: Optional[StateEvidence] = None
+    discrepancy: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "address": self.address,
+            "grant": self.grant.to_dict() if self.grant else None,
+            "revoke": self.revoke.to_dict() if self.revoke else None,
+            "has_role": self.has_role.to_dict() if self.has_role else None,
+            "discrepancy": self.discrepancy,
+        }
+
+
+@dataclass
+class ScanEvidence:
+    """The additive top-level evidence block. ``as_of_block`` anchors every state read."""
+    as_of_block: Optional[int] = None
+    roles: dict[str, list[RoleHolderEvidence]] = field(default_factory=dict)
+    announcements: list[EventEvidence] = field(default_factory=list)
+    state: dict[str, StateEvidence] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "as_of_block": self.as_of_block,
+            "roles": {r: [h.to_dict() for h in hs] for r, hs in self.roles.items()},
+            "announcements": [e.to_dict() for e in self.announcements],
+            "state": {k: v.to_dict() for k, v in self.state.items()},
+        }
+
+
+# --------------------------------------------------------------------------
 # Output models
 # --------------------------------------------------------------------------
 @dataclass
@@ -25,9 +93,15 @@ class Finding:
     # here would be redundant and is never serialized.
     severity: str  # CRITICAL | High | Medium | Low
     detail: str
+    # Additive: the state evidence a state-derived finding turns on (or None).
+    evidence: Optional[StateEvidence] = None
 
     def to_dict(self) -> dict:
-        return {"severity": self.severity, "detail": self.detail}
+        return {
+            "severity": self.severity,
+            "detail": self.detail,
+            "evidence": self.evidence.to_dict() if self.evidence else None,
+        }
 
 
 @dataclass
@@ -99,6 +173,8 @@ class ScanResult:
     deployed_via_factory: Optional[str]
     scanner_version: str
     scanned_at: str
+    # Additive: verifiable on-chain provenance for the claims above (Phase 1).
+    evidence: ScanEvidence = field(default_factory=ScanEvidence)
 
     def to_dict(self) -> dict:
         return {
@@ -123,6 +199,7 @@ class ScanResult:
             "deployed_via_factory": self.deployed_via_factory,
             "scanner_version": self.scanner_version,
             "scanned_at": self.scanned_at,
+            "evidence": self.evidence.to_dict(),
         }
 
 
@@ -224,3 +301,10 @@ class ScanInputs:
     # be completed (e.g. {"roles": "…provider getLogs range cap…"}); the engine maps
     # each source to the unrated dimensions it explains for the scan response.
     read_diagnostics: dict[str, str] = field(default_factory=dict)
+
+    # On-chain evidence (Phase 1) — NOT scoring inputs. Filled by the reader,
+    # assembled into ScanResult.evidence by the engine. Never change a verdict.
+    as_of_block: Optional[int] = None
+    role_evidence: dict[str, list["RoleHolderEvidence"]] = field(default_factory=dict)
+    announcement_evidence: list["EventEvidence"] = field(default_factory=list)
+    state_evidence: dict[str, "StateEvidence"] = field(default_factory=dict)

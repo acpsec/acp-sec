@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from . import __version__
 from .constants import CRITICAL_CAP, GRADE_BANDS, UINT128_MAX, UNRATED_MULTIPLIER
 from .dimensions import DIMENSION_RUNNERS
-from .models import DimensionResult, IssuerPowers, ScanInputs, ScanResult
+from .models import DimensionResult, IssuerPowers, ScanEvidence, ScanInputs, ScanResult
 
 # Stable critical-reason identifiers (prefix : human-readable detail).
 CRITICAL_UNCAPPED_MINT = "uncapped_mint: supply cap equals type(uint128).max (infinite mint)"
@@ -125,6 +125,17 @@ def _issuer_powers(inp: ScanInputs) -> IssuerPowers:
     )
 
 
+def _build_evidence(inp: ScanInputs) -> ScanEvidence:
+    """Assemble the additive evidence block from what the reader gathered. Read-only:
+    never touches scores. Empty (never fabricated) when the reader supplied nothing."""
+    return ScanEvidence(
+        as_of_block=inp.as_of_block,
+        roles=dict(inp.role_evidence),
+        announcements=list(inp.announcement_evidence),
+        state=dict(inp.state_evidence),
+    )
+
+
 def assess(
     inputs: ScanInputs,
     *,
@@ -181,4 +192,5 @@ def assess(
         deployed_via_factory=inputs.deployed_via_factory,
         scanner_version=scanner_version,
         scanned_at=scanned_at,
+        evidence=_build_evidence(inputs),
     )

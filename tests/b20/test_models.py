@@ -61,7 +61,7 @@ def test_top_level_keys_match_canonical_schema():
         "currency_code", "trust_score", "raw_score", "grade", "rated",
         "multiplier", "unrated_dimensions", "read_diagnostics", "is_critical",
         "critical_reasons", "dimensions", "issuer_powers", "deployed_via_factory",
-        "scanner_version", "scanned_at",
+        "scanner_version", "scanned_at", "evidence",
     }
 
 
@@ -71,7 +71,7 @@ def test_dimensions_serialized_as_score_weight_findings():
     assert set(sup.keys()) == {"score", "weight", "findings"}
     assert sup["score"] == 90.0
     assert sup["weight"] == 0.25
-    assert sup["findings"] == [{"severity": "Medium", "detail": "x"}]
+    assert sup["findings"] == [{"severity": "Medium", "detail": "x", "evidence": None}]
 
 
 def test_issuer_powers_block_keys():
