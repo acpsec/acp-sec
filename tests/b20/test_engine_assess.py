@@ -1,8 +1,9 @@
 """Full assembly: engine.assess -> canonical ScanResult (task 2.9, resolved schema)."""
 
+from acpsec_api.b20 import constants as C
 from acpsec_api.b20.constants import DIMENSION_WEIGHTS, UINT128_MAX
 from acpsec_api.b20.engine import assess
-from acpsec_api.b20.models import ScanInputs
+from acpsec_api.b20.models import EventEvidence, RoleHolderEvidence, ScanInputs, StateEvidence
 
 _AT = "2026-06-22T00:00:00Z"
 
@@ -41,7 +42,7 @@ def test_full_shape_and_score():
         "currency_code", "trust_score", "raw_score", "grade", "rated",
         "multiplier", "unrated_dimensions", "read_diagnostics", "is_critical",
         "critical_reasons", "dimensions", "issuer_powers", "deployed_via_factory",
-        "scanner_version", "scanned_at",
+        "scanner_version", "scanned_at", "evidence",
     }
     assert set(d["dimensions"].keys()) == set(DIMENSION_WEIGHTS)
     # 0.30*90 + 0.25*100 + 0.20*70 + 0.15*100 + 0.10*100 = 91
@@ -125,3 +126,29 @@ def test_critical_and_unrated_take_the_lower():
     assert d["trust_score"] == 31
     assert d["trust_score"] < 39
     assert d["grade"] == "F"
+
+
+def test_evidence_propagates_through_assess_to_dict():
+    """Evidence in ScanInputs flows end-to-end: assess() -> ScanResult.to_dict()["evidence"]."""
+    inp = _good()
+    inp.as_of_block = 999
+    inp.role_evidence = {
+        C.B20_ROLE_DEFAULT_ADMIN.lower(): [
+            RoleHolderEvidence(
+                address="0xa",
+                grant=EventEvidence("0xtx1", 5, 0),
+                has_role=StateEvidence(999, confirmed=True),
+            )
+        ]
+    }
+    inp.announcement_evidence = [EventEvidence("0xtx2", 7, 1)]
+    inp.state_evidence = {"supply_cap": StateEvidence(999, raw_value="0x01")}
+    ev = assess(inp, scanned_at=_AT).to_dict()["evidence"]
+    assert ev["as_of_block"] == 999
+    rhe = ev["roles"][C.B20_ROLE_DEFAULT_ADMIN.lower()][0]
+    assert rhe["address"] == "0xa"
+    assert rhe["grant"] == {"kind": "event", "tx_hash": "0xtx1", "block_number": 5, "log_index": 0}
+    assert rhe["has_role"]["confirmed"] is True
+    assert rhe["discrepancy"] is False
+    assert ev["announcements"][0]["tx_hash"] == "0xtx2"
+    assert ev["state"]["supply_cap"]["raw_value"] == "0x01"
