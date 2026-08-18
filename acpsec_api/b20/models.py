@@ -55,9 +55,11 @@ class RoleHolderEvidence:
     revoke: Optional[EventEvidence] = None
     has_role: Optional[StateEvidence] = None
     discrepancy: bool = False
+    role_name: Optional[str] = None   # human name from ROLE_NAMES; null for unknown hashes
 
     def to_dict(self) -> dict:
         return {
+            "role": self.role_name,
             "address": self.address,
             "grant": self.grant.to_dict() if self.grant else None,
             "revoke": self.revoke.to_dict() if self.revoke else None,

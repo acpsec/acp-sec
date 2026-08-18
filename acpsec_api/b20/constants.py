@@ -141,6 +141,21 @@ B20_ROLE_UNPAUSE = "0x265b220c5a8891efdd9e1b1b7fa72f257bd5169f8d87e319cf3dad6ff5
 B20_ROLE_METADATA = "0x6bd6b5318a46e5fff572d5e4258a20774aab40cc35ac7680654b9081fcc82f80"   # keccak256("METADATA_ROLE")
 B20_ROLE_OPERATOR = "0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929"   # keccak256("OPERATOR_ROLE") — Asset only
 
+# --- Role hash → human name (for evidence serialisation) ------------------
+# Covers every role in B20Constants.sol. Hash not in this dict → role=null in
+# the evidence output; we never guess a name.
+ROLE_NAMES: dict[str, str] = {
+    B20_ROLE_DEFAULT_ADMIN.lower(): "DEFAULT_ADMIN",
+    B20_ROLE_MINT.lower(): "MINT",
+    B20_ROLE_BURN.lower(): "BURN",
+    B20_ROLE_BURN_BLOCKED.lower(): "BURN_BLOCKED",
+    B20_ROLE_SEIZE.lower(): "SEIZE",
+    B20_ROLE_PAUSE.lower(): "PAUSE",
+    B20_ROLE_UNPAUSE.lower(): "UNPAUSE",
+    B20_ROLE_METADATA.lower(): "METADATA",
+    B20_ROLE_OPERATOR.lower(): "OPERATOR",
+}
+
 # --- Policy scope bytes32 values ------------------------------------------
 B20_POLICY_TRANSFER_SENDER = "0xb81736c875ab819dd97f59f2a6542cfb731ad52b4ae15a6f24df2fb02b0327f5"
 B20_POLICY_TRANSFER_RECEIVER = "0x8a4b3fa2d8b921852bc0089c6ef0958aa6961897be36fd731330fe2cd23f8363"

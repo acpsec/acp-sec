@@ -412,6 +412,7 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0, *, as_of_blo
     def _build_role_ev(role_hash: str, holders: Optional[list[str]], holder_grants: dict) -> list:
         if not holders:
             return []
+        role_name = C.ROLE_NAMES.get(role_hash.lower())
         result = []
         for h in holders:
             grant_info = holder_grants.get(h)
@@ -427,7 +428,8 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0, *, as_of_blo
                 if not confirmed_raw:
                     discrepancy = True
             result.append(RoleHolderEvidence(
-                address=h, grant=grant_ev, has_role=has_role_ev, discrepancy=discrepancy,
+                address=h, grant=grant_ev, has_role=has_role_ev,
+                discrepancy=discrepancy, role_name=role_name,
             ))
         return result
 
