@@ -105,6 +105,60 @@ def test_read_roles_failed_logs_yields_empty_role_evidence():
     assert roles["role_evidence"] == {}
 
 
+# ── Role name injection ───────────────────────────────────────────────────────
+
+def test_read_roles_default_admin_holder_has_role_name():
+    """Holders built by read_roles carry the human role name."""
+    f = FakeRpc(84532).grant_role(C.B20_ROLE_DEFAULT_ADMIN, ADMIN_H, 5)
+    roles = R.read_roles(f, ASSET, 84532)
+    rhe = roles["role_evidence"][C.B20_ROLE_DEFAULT_ADMIN.lower()][0]
+    assert rhe.role_name == "DEFAULT_ADMIN"
+
+
+def test_read_roles_mint_holder_has_role_name():
+    f = FakeRpc(84532).grant_role(C.B20_ROLE_MINT, MINT_H, 5)
+    roles = R.read_roles(f, ASSET, 84532)
+    rhe = roles["role_evidence"][C.B20_ROLE_MINT.lower()][0]
+    assert rhe.role_name == "MINT"
+
+
+def test_read_roles_burn_role_name_resolves():
+    """0xe97b...fa22 (BURN_ROLE) surfaces as 'BURN' — the hash the live scan returned."""
+    f = FakeRpc(84532).grant_role(C.B20_ROLE_BURN, ADMIN_H, 5)
+    roles = R.read_roles(f, ASSET, 84532)
+    rhe = roles["role_evidence"][C.B20_ROLE_BURN.lower()][0]
+    assert rhe.role_name == "BURN"
+
+
+def test_read_roles_role_name_appears_in_serialized_output():
+    """role_name flows through to_dict() so the API consumer sees it."""
+    f = FakeRpc(84532).grant_role(C.B20_ROLE_SEIZE, SEIZE_H, 5)
+    roles = R.read_roles(f, ASSET, 84532)
+    d = roles["role_evidence"][C.B20_ROLE_SEIZE.lower()][0].to_dict()
+    assert d["role"] == "SEIZE"
+
+
+def test_live_fixture_three_roles_all_named():
+    """Replay the three roles seen on the live mainnet token 0xb200...58b7:
+    DEFAULT_ADMIN / MINT / BURN — confirms the previously unreadable BURN hash resolves.
+    block_number must exceed the real grant blocks (49M range) so getLogs sees them."""
+    LIVE_TOKEN = "0xb2000000000000000000002d0ba3164cc74f58b7"
+    ADMIN_LIVE = "0x38467be00970af18076fd08f6b4cf38ba91572b1"
+    MINT_BURN_LIVE = "0xd1ca4dacdf3231011d175351f1f02d15c7c5664c"
+    f = FakeRpc(8453).set_block_number(50_200_000)   # current mainnet, above all grant blocks
+    f.grant_role(C.B20_ROLE_DEFAULT_ADMIN, ADMIN_LIVE, 49145218,
+                 tx="0x21cf9d7b81f36a196db463e63cf34c3478f2a325caa9d64a46780cd42dbfdf77")
+    f.grant_role(C.B20_ROLE_MINT, MINT_BURN_LIVE, 49145440,
+                 tx="0x9f3b2ad542b020e505fba5332e545653d96e9f6120aab474f3b6364c33fab230")
+    f.grant_role(C.B20_ROLE_BURN, MINT_BURN_LIVE, 49145602,
+                 tx="0x87e7f2b7a3590c0fdfc7c4a96481000342a446549d2b159caae40d28e878b1e2")
+    roles = R.read_roles(f, LIVE_TOKEN, 8453)
+    ev = roles["role_evidence"]
+    assert ev[C.B20_ROLE_DEFAULT_ADMIN.lower()][0].role_name == "DEFAULT_ADMIN"
+    assert ev[C.B20_ROLE_MINT.lower()][0].role_name == "MINT"
+    assert ev[C.B20_ROLE_BURN.lower()][0].role_name == "BURN"
+
+
 # ── Group 3: hasRole cross-check ─────────────────────────────────────────────
 
 def test_read_roles_hasrole_confirmed_true():
