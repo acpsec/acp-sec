@@ -144,3 +144,37 @@ Overall average: **60-90% token reduction** on common development operations.
 This project follows **Preset 2 (Web3)** with a **Python backend**.
 See `~/.claude/STACK-REFERENCE.md` for the full preset definition.
 Scope: Base Mainnet (8453) + Base Sepolia (84532).
+
+---
+
+## Git Workflow
+
+### After a squash-merge: the branch is DEAD
+
+When a PR is squash-merged, GitHub creates a **new commit on main with a different
+hash**. The original branch commits still appear in `git log main..HEAD` — this is
+misleading: git sees them as "not on main" even though the content is there. Continuing
+work on the old branch drags the old commit along and produces phantom conflicts on the
+next PR (this cost us PR #46).
+
+**Rule: never continue work on a branch after its PR is squash-merged.**
+
+Always start follow-up work from a fresh branch:
+
+```bash
+git checkout main && git pull --ff-only && git checkout -b <new-branch>
+```
+
+If you need to carry over uncommitted work, cherry-pick the specific commit(s) onto the
+new branch — never rebase or merge the old branch.
+
+### Checking whether work landed on main
+
+Do **not** check `git log main..HEAD` — that lies after a squash-merge.
+Instead, grep the content directly on `origin/main`:
+
+```bash
+git grep "symbol_or_string" origin/main -- path/to/file
+# or
+git show origin/main:path/to/file | grep "symbol_or_string"
+```
