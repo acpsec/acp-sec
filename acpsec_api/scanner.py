@@ -1921,7 +1921,7 @@ def _build_no_website_result(agent_name: str) -> dict[str, Any]:
             "agent_version":    "",
             "band":             band,
             "verdict":          verdict,
-            "final_score":      round(raw_total, 2),
+            "final_score":      score_pct,
             "score_pct":        score_pct,
             "timestamp":        scan_ts,
             "controls":         controls,
@@ -1961,6 +1961,149 @@ def _build_no_website_result(agent_name: str) -> dict[str, Any]:
                     "Only AUTH-01 receives partial credit (agent identity declared).",
                     "Absence of a public website is itself a transparency signal (informational).",
                     "Provide the agent's website URL for a full 38-check scan.",
+                ],
+            },
+        },
+    }
+
+
+# Minimum bytes of raw HTML (stripped) to treat a response as "fetchable".
+# Below this, the body is either empty or a pure JavaScript scaffold that the
+# scanner cannot extract text from — treat it as a fetch failure.
+MIN_BODY_LEN: int = 200
+
+# HTTP status codes that indicate a server-side block or error.  401/403 are
+# intentionally excluded so the existing login-wall auto-retry logic still
+# handles those gracefully.
+FETCH_FAILED_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+
+def _build_fetch_failed_result(
+    url: str,
+    agent_name: str,
+    reason: str,
+    original_url: str = "",
+) -> dict[str, Any]:
+    """Partial scan result when the website fetch failed entirely.
+
+    Controls are forced to 'unrated' with the verbatim fetch-error reason in
+    their evidence.  AUTH-01 still awards 2/3 pts when the agent has a declared
+    name — that is the only observable fact.  The result carries rated=False
+    and fetch_failed=True so callers cannot mistake this for a full assessment.
+
+    Absence of evidence must never become evidence of a problem.
+    """
+    empty_soup = BeautifulSoup("", "html.parser")
+    empty_corpus = {
+        "base": "", "root_text": "", "all_text": "",
+        "extra_pages": [], "extra_pages_count": 0,
+        "security_txt": {"present": False, "body": "", "url": ""},
+        "robots_sitemap": {"robots": "", "sitemap": "", "sitemap_urls": []},
+        "bounty": {"found": False, "evidence": []},
+        "framework": {"found": False, "strong": False, "evidence": []},
+        "pages_probed": [],
+    }
+
+    controls: list[dict] = []
+    controls.extend(_auth("", {}, empty_soup))
+    controls.extend(_ctx("",  {}, empty_soup))
+    controls.extend(_inj("",  {}, empty_soup))
+    controls.extend(_priv("", {}, empty_soup))
+    controls.extend(_out("",  {}, empty_soup))
+    controls.extend(_gov("",  {}, empty_soup))
+    controls.extend(_pub(empty_corpus, empty_soup))
+
+    fail_finding  = f"website fetch failed: {reason}"
+    fail_evidence = [
+        f"website fetch failed: {reason}",
+        "Technical security signals are unavailable — the website could not be retrieved.",
+    ]
+    fail_recs = [
+        "Check that the URL is publicly accessible (not behind a CDN block or VPN).",
+        "Try the agent's API or documentation URL if this is a marketing page.",
+    ]
+    for c in controls:
+        c["score"]           = 0.0
+        c["status"]          = "unrated"
+        c["finding"]         = fail_finding
+        c["evidence"]        = list(fail_evidence)
+        c["recommendations"] = list(fail_recs)
+        c["inferred"]        = True
+
+    if agent_name and agent_name.strip():
+        for c in controls:
+            if c["ctrl"] == "AUTH-01":
+                c["score"]    = 2.0
+                c["status"]   = "warn"
+                c["finding"]  = f"Agent identity declared: '{agent_name}'."
+                c["evidence"] = [
+                    f"agent_name='{agent_name}'",
+                    "Only observable signal — website was unreachable.",
+                    f"Fetch error: {reason}",
+                ]
+                break
+
+    raw_total = sum(c["score"] for c in controls)
+    total_max = sum(c["max"]   for c in controls)
+    score_pct = round(raw_total / total_max * 100, 1) if total_max else 0.0
+    final_score = score_pct
+
+    if   score_pct >= 90: band, verdict = "EXEMPLARY",   "Best-in-class"
+    elif score_pct >= 70: band, verdict = "SECURE",      "Production-ready"
+    elif score_pct >= 50: band, verdict = "HARDENED",    "Minor gaps"
+    elif score_pct >= 30: band, verdict = "VULNERABLE",  "Known weaknesses"
+    elif score_pct >= 10: band, verdict = "CRITICAL",    "Multiple high-severity issues"
+    else:                 band, verdict = "COMPROMISED",  "Fundamental security failures"
+
+    scan_ts = datetime.now(timezone.utc).isoformat()
+    _cov, _found, _low = _compute_coverage(controls)
+    return {
+        "ok": True,
+        "data": {
+            "agent_name":           agent_name or urlparse_name(url),
+            "agent_version":        "",
+            "band":                 band,
+            "verdict":              f"Fetch failed — {reason}. Technical controls are unrated.",
+            "final_score":          final_score,
+            "score_pct":            score_pct,
+            "timestamp":            scan_ts,
+            "controls":             controls,
+            "source":               "scanner",
+            "scan_url":             url,
+            "original_url":         original_url or url,
+            "security_headers":     {},
+            "sec_header_count":     0,
+            "critical_fails":       0,
+            "evidence_coverage":    _cov,
+            "evidence_found_count": _found,
+            "low_evidence":         _low,
+            "fetch_warning":        reason,
+            "methodology":          "fetch-failed",
+            "acpsec_available":     False,
+            "scan_mode":            "limited",
+            "scan_duration_ms":     0,
+            "is_self_probe":        False,
+            "rated":                False,
+            "limited_scan":         True,
+            "fetch_failed":         True,
+            "no_website":           True,
+            "limited_reason":       "fetch-failed",
+            "root_tried":           None,
+            "score_cap":            None,
+            "metadata": {
+                "target_url":         url,
+                "original_url":       original_url or url,
+                "parent_domain":      None,
+                "is_self_probe":      False,
+                "scan_timestamp":     scan_ts,
+                "scan_duration_ms":   0,
+                "parent_signals":     None,
+                "pages_probed":       [],
+                "pages_probed_count": 0,
+                "notes": [
+                    f"Website fetch failed: {reason}",
+                    "All technical controls are unrated — absence of data is not a finding.",
+                    "Provide a publicly accessible URL or the agent's API/documentation URL.",
                 ],
             },
         },
@@ -2072,7 +2215,7 @@ def _build_limited_scan_result(
             "agent_version":    "",
             "band":             band,
             "verdict":          verdict,
-            "final_score":      round(capped, 2),
+            "final_score":      score_pct,
             "score_pct":        score_pct,
             "timestamp":        scan_ts,
             "controls":         controls,
@@ -2163,12 +2306,26 @@ def analyze_agent(url: str, agent_name: str = "", scan_mode: str = "root") -> di
 
     resp, soup, fetch_warn = _fetch_website(url)
 
+    # Gate 1: network-level failure (timeout, SSL, connection refused).
+    # B20 doctrine: absence of evidence is not evidence of a problem —
+    # return a partial result with UNRATED controls instead of ok:False.
     if resp is None or soup is None:
-        suggestion = _suggest_alt_url(url)
-        err = f"Could not fetch website: {fetch_warn}"
-        if suggestion:
-            err += f" — try: {suggestion}"
-        return {"ok": False, "error": err, "suggestion": suggestion}
+        return _build_fetch_failed_result(
+            url, agent_name, fetch_warn or "unknown fetch error", original_url
+        )
+
+    # Gate 2: server-side block / rate-limit / error (excludes 401/403 which
+    # may be login walls the auto-retry logic can work around).
+    if resp.status_code in FETCH_FAILED_STATUS_CODES:
+        return _build_fetch_failed_result(
+            url, agent_name, f"HTTP {resp.status_code}", original_url
+        )
+
+    # Gate 3: empty or JavaScript-only body — can't extract signals.
+    if len((resp.text or "").strip()) < MIN_BODY_LEN:
+        return _build_fetch_failed_result(
+            url, agent_name, "response body empty or JavaScript-only", original_url
+        )
 
     # Second check: the input was a custom domain but it 301/302'd to a
     # social-media host.  Treat that as "no website" too.
@@ -2385,7 +2542,7 @@ def analyze_agent(url: str, agent_name: str = "", scan_mode: str = "root") -> di
             "agent_version":     "",
             "band":              band,
             "verdict":           verdict,
-            "final_score":       round(penalised, 2),
+            "final_score":       score_pct,
             "score_pct":         score_pct,
             "timestamp":         scan_timestamp,
             "controls":          controls,
