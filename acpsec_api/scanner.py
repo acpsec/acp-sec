@@ -1825,6 +1825,24 @@ def _is_social_media_url(url: str) -> bool:
     return host in SOCIAL_MEDIA_HOSTS
 
 
+def _compute_coverage(controls: list[dict]) -> tuple[float, int, bool]:
+    """Return (evidence_coverage, found_count, low_evidence) for a controls list.
+
+    Threshold: score/max >= 0.5 = direct evidence found.
+    skip/unrated controls are excluded from the denominator.
+    low_evidence = True when coverage < 0.25 (fewer than 25% of assessed
+    controls scored above half their maximum).
+    """
+    assessed = [c for c in controls if c.get("status") not in ("skip", "unrated")]
+    total = len(assessed) or 1
+    found = sum(
+        1 for c in assessed
+        if c.get("max", 0) > 0 and c.get("score", 0) / c["max"] >= 0.5
+    )
+    coverage = round(found / total, 3)
+    return coverage, found, coverage < 0.25
+
+
 def _build_no_website_result(agent_name: str) -> dict[str, Any]:
     """Partial scan result when no website URL was supplied by the caller.
 
@@ -1912,7 +1930,10 @@ def _build_no_website_result(agent_name: str) -> dict[str, Any]:
             "original_url":     "",
             "security_headers": {},
             "sec_header_count": 0,
-            "critical_fails":   0,
+            "critical_fails":       0,
+            "evidence_coverage":    0.0,
+            "evidence_found_count": 0,
+            "low_evidence":         True,
             "fetch_warning":    "",
             "methodology":      "no-website-partial",
             "acpsec_available": False,
@@ -2042,6 +2063,7 @@ def _build_limited_scan_result(
         "Provide the agent's website URL for a full 38-check scan."
     )
 
+    _lim_cov, _lim_found, _lim_low = _compute_coverage(controls)
     scan_ts = datetime.now(timezone.utc).isoformat()
     return {
         "ok": True,
@@ -2059,7 +2081,10 @@ def _build_limited_scan_result(
             "original_url":     original_url or url,
             "security_headers": {},
             "sec_header_count": 0,
-            "critical_fails":   0,
+            "critical_fails":       0,
+            "evidence_coverage":    _lim_cov,
+            "evidence_found_count": _lim_found,
+            "low_evidence":         _lim_low,
             "fetch_warning":    "",
             "methodology":      "limited-scan (no-website)",
             "acpsec_available": False,
@@ -2314,6 +2339,12 @@ def analyze_agent(url: str, agent_name: str = "", scan_mode: str = "root") -> di
         if c["severity"] == "CRITICAL" and c["status"] == "fail"
     )
 
+    # Evidence coverage — additive metadata, no effect on scoring or band.
+    # Threshold: score/max >= 0.5 = direct evidence found (pass=1.0, default
+    # warn=0.4 doesn't qualify, fail=0 never qualifies).
+    # skip/unrated controls are excluded from the denominator — they weren't assessed.
+    evidence_coverage, _ev_found, low_evidence = _compute_coverage(controls)
+
     # Total scan duration (BUG #3)
     scan_duration_ms = int((time.monotonic() - scan_start) * 1000)
 
@@ -2363,6 +2394,9 @@ def analyze_agent(url: str, agent_name: str = "", scan_mode: str = "root") -> di
             "security_headers":  found_sec_hdrs,
             "sec_header_count":  sec_hdr_count,
             "critical_fails":    critical_fails,
+            "evidence_coverage":    evidence_coverage,
+            "evidence_found_count": _ev_found,
+            "low_evidence":         low_evidence,
             "fetch_warning":     fetch_warn,
             "methodology":       "heuristic+corpus+parent",
             "acpsec_available":  acpsec_available,

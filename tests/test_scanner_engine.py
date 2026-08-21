@@ -207,6 +207,74 @@ def test_analyze_agent_empty_url_no_fabrication():
     )
 
 
+# ---------------------------------------------------------------------------
+# Coverage summary (RED — all fail before implementation)
+# ---------------------------------------------------------------------------
+
+
+def test_coverage_summary_keys_exist(stub_network):
+    """analyze_agent result carries evidence_coverage, evidence_found_count, low_evidence."""
+    d = _scan()["data"]
+    assert "evidence_coverage" in d, "missing evidence_coverage"
+    assert "evidence_found_count" in d, "missing evidence_found_count"
+    assert "low_evidence" in d, "missing low_evidence"
+
+
+def test_coverage_summary_types(stub_network):
+    """Coverage fields have correct types and ranges."""
+    d = _scan()["data"]
+    assert isinstance(d["evidence_coverage"], float)
+    assert 0.0 <= d["evidence_coverage"] <= 1.0
+    assert isinstance(d["evidence_found_count"], int)
+    assert d["evidence_found_count"] >= 0
+    assert isinstance(d["low_evidence"], bool)
+
+
+def test_coverage_does_not_change_score(stub_network):
+    """Adding coverage metadata must not alter score_pct, final_score, or band."""
+    d = _scan()["data"]
+    assert d["score_pct"] == 25.9
+    assert d["final_score"] == 30.1
+    assert d["band"] == "CRITICAL"
+
+
+def test_compute_coverage_all_fail():
+    """_compute_coverage: all-fail controls → found=0, coverage=0.0, low_evidence=True."""
+    controls = [{"status": "fail", "score": 0.0, "max": 3} for _ in range(38)]
+    coverage, found, low = scanner._compute_coverage(controls)
+    assert found == 0
+    assert coverage == 0.0
+    assert low is True
+
+
+def test_compute_coverage_all_pass():
+    """_compute_coverage: all-pass controls → found=38, coverage=1.0, low_evidence=False."""
+    controls = [{"status": "pass", "score": 3.0, "max": 3} for _ in range(38)]
+    coverage, found, low = scanner._compute_coverage(controls)
+    assert found == 38
+    assert coverage == 1.0
+    assert low is False
+
+
+def test_compute_coverage_threshold_boundary():
+    """score/max exactly 0.5 counts as evidence found; below 0.5 does not."""
+    at_threshold = {"status": "warn", "score": 1.5, "max": 3}   # 0.5 → counts
+    below = {"status": "warn", "score": 1.2, "max": 3}           # 0.4 → doesn't
+    cov_at, found_at, _ = scanner._compute_coverage([at_threshold])
+    cov_below, found_below, _ = scanner._compute_coverage([below])
+    assert found_at == 1
+    assert found_below == 0
+
+
+def test_coverage_excludes_skip_and_unrated():
+    """skip/unrated controls are excluded from the coverage denominator."""
+    # Social-media short-circuit produces skip controls — evidence_coverage
+    # must still be a valid float (no div-by-zero) and low_evidence must be bool.
+    d = scanner.analyze_agent("https://x.com/someagent", "SomeAgent")["data"]
+    assert isinstance(d.get("evidence_coverage"), float)
+    assert isinstance(d.get("low_evidence"), bool)
+
+
 def test_extract_token_info_detects_token_and_ca():
     ti = scanner.extract_token_info(
         html="Buy $SECURE now! CA: 0x1234567890abcdef1234567890abcdef12345678",
