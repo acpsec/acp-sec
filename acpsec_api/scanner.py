@@ -1825,6 +1825,127 @@ def _is_social_media_url(url: str) -> bool:
     return host in SOCIAL_MEDIA_HOSTS
 
 
+def _build_no_website_result(agent_name: str) -> dict[str, Any]:
+    """Partial scan result when no website URL was supplied by the caller.
+
+    Runs all 7 dimension check functions against empty inputs so every check ID
+    appears in the result (including any future additions). All checks are forced
+    to status='unrated' at score 0, except AUTH-01 which receives 2/3 pts when
+    the agent has a declared name.
+
+    The result carries rated=False so it cannot be mistaken for a full scan.
+    No points are invented from unfetched pages.
+    """
+    empty_soup = BeautifulSoup("", "html.parser")
+    empty_corpus = {
+        "base": "", "root_text": "", "all_text": "",
+        "extra_pages": [], "extra_pages_count": 0,
+        "security_txt": {"present": False, "body": "", "url": ""},
+        "robots_sitemap": {"robots": "", "sitemap": "", "sitemap_urls": []},
+        "bounty": {"found": False, "evidence": []},
+        "framework": {"found": False, "strong": False, "evidence": []},
+        "pages_probed": [],
+    }
+
+    controls: list[dict] = []
+    controls.extend(_auth("", {}, empty_soup))
+    controls.extend(_ctx("",  {}, empty_soup))
+    controls.extend(_inj("",  {}, empty_soup))
+    controls.extend(_priv("", {}, empty_soup))
+    controls.extend(_out("",  {}, empty_soup))
+    controls.extend(_gov("",  {}, empty_soup))
+    controls.extend(_pub(empty_corpus, empty_soup))
+
+    unrated_finding  = "no website provided — technical security signals unavailable"
+    unrated_evidence = ["no website provided — technical security signals unavailable"]
+    unrated_recs     = ["Provide the agent's dedicated website URL for a full 38-check scan."]
+    for c in controls:
+        c["score"]           = 0.0
+        c["status"]          = "unrated"
+        c["finding"]         = unrated_finding
+        c["evidence"]        = list(unrated_evidence)
+        c["recommendations"] = list(unrated_recs)
+        c["inferred"]        = True
+
+    if agent_name and agent_name.strip():
+        for c in controls:
+            if c["ctrl"] == "AUTH-01":
+                c["score"]    = 2.0
+                c["status"]   = "warn"
+                c["finding"]  = f"Agent identity declared: '{agent_name}'."
+                c["evidence"] = [
+                    f"agent_name='{agent_name}'",
+                    "Only observable signal without a website.",
+                    "Full identity verification requires a public website.",
+                ]
+                break
+
+    raw_total  = sum(c["score"] for c in controls)
+    total_max  = sum(c["max"]   for c in controls)
+    score_pct  = round(raw_total / total_max * 100, 1) if total_max else 0.0
+
+    if   score_pct >= 90: band, verdict = "EXEMPLARY",   "Best-in-class"
+    elif score_pct >= 70: band, verdict = "SECURE",      "Production-ready"
+    elif score_pct >= 50: band, verdict = "HARDENED",    "Minor gaps"
+    elif score_pct >= 30: band, verdict = "VULNERABLE",  "Known weaknesses"
+    elif score_pct >= 10: band, verdict = "CRITICAL",    "Multiple high-severity issues"
+    else:                  band, verdict = "COMPROMISED", "Fundamental security failures"
+    verdict = (
+        "Partial scan — no website URL provided. "
+        "Technical dimensions are unrated. Provide a website for a full 38-check scan."
+    )
+
+    scan_ts = datetime.now(timezone.utc).isoformat()
+    return {
+        "ok": True,
+        "data": {
+            "agent_name":       agent_name or "unknown agent",
+            "agent_version":    "",
+            "band":             band,
+            "verdict":          verdict,
+            "final_score":      round(raw_total, 2),
+            "score_pct":        score_pct,
+            "timestamp":        scan_ts,
+            "controls":         controls,
+            "source":           "scanner",
+            "scan_url":         "",
+            "original_url":     "",
+            "security_headers": {},
+            "sec_header_count": 0,
+            "critical_fails":   0,
+            "fetch_warning":    "",
+            "methodology":      "no-website-partial",
+            "acpsec_available": False,
+            "scan_mode":        "limited",
+            "scan_duration_ms": 0,
+            "is_self_probe":    False,
+            "rated":            False,
+            "limited_scan":     True,
+            "no_website":       True,
+            "limited_reason":   "no-website-provided",
+            "root_tried":       None,
+            "score_cap":        None,
+            "metadata": {
+                "target_url":         "",
+                "original_url":       "",
+                "parent_domain":      None,
+                "is_self_probe":      False,
+                "scan_timestamp":     scan_ts,
+                "scan_duration_ms":   0,
+                "parent_signals":     None,
+                "pages_probed":       [],
+                "pages_probed_count": 0,
+                "notes": [
+                    "No website URL provided — technical dimensions are unrated.",
+                    "Only AUTH-01 receives partial credit (agent identity declared).",
+                    "Absence of a public website is itself a transparency signal (informational).",
+                    "Provide the agent's website URL for a full 38-check scan.",
+                ],
+            },
+        },
+    }
+
+
 def _build_limited_scan_result(
     url: str,
     agent_name: str,
@@ -1995,6 +2116,10 @@ def analyze_agent(url: str, agent_name: str = "", scan_mode: str = "root") -> di
     # Start global scan timer (BUG #3 — cumulative timeout)
     scan_start    = time.monotonic()
     scan_deadline = scan_start + SCAN_BUDGET_SECONDS
+
+    # No URL provided — return a partial result with technical dims unrated.
+    if not url:
+        return _build_no_website_result(agent_name)
 
     # URL normalisation (ISSUE 4) — default to root domain
     original_url = url

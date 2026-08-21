@@ -122,9 +122,6 @@ async def scanner_scan(
     if scan_mode not in ("root", "exact"):
         scan_mode = "root"
 
-    if not url:
-        return JSONResponse({"error": "'url' is required"}, status_code=422)
-
     if engine is None:
         return JSONResponse({"error": "scanner module not available"}, status_code=503)
 

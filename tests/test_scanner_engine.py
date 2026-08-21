@@ -148,6 +148,65 @@ def test_analyze_agent_social_media_shortcircuit():
     assert d["score_pct"] == 1.7
 
 
+# ---------------------------------------------------------------------------
+# No-website partial scan (RED tests — all fail before implementation)
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_agent_empty_url_returns_ok():
+    """analyze_agent('') returns ok:True (partial result, not a failure)."""
+    result = scanner.analyze_agent("", "SomeAgent", scan_mode="exact")
+    assert result["ok"] is True, f"expected ok:True, got: {result}"
+
+
+def test_analyze_agent_empty_url_rated_false():
+    """Partial scan carries rated:false so it can't be mistaken for a full scan."""
+    data = scanner.analyze_agent("", "SomeAgent", scan_mode="exact")["data"]
+    assert data["rated"] is False
+
+
+def test_analyze_agent_empty_url_metadata():
+    """Partial scan carries no_website=True and limited_reason='no-website-provided'."""
+    data = scanner.analyze_agent("", "SomeAgent", scan_mode="exact")["data"]
+    assert data["no_website"] is True
+    assert data["limited_reason"] == "no-website-provided"
+    assert data["methodology"] == "no-website-partial"
+
+
+def test_analyze_agent_empty_url_controls_unrated():
+    """All controls except AUTH-01 carry status='unrated' — not 'skip' or scored."""
+    ctrls = scanner.analyze_agent("", "SomeAgent", scan_mode="exact")["data"]["controls"]
+    assert len(ctrls) == 38
+    by_id = {c["ctrl"]: c for c in ctrls}
+    non_auth01 = [c for c in ctrls if c["ctrl"] != "AUTH-01"]
+    assert all(c["status"] == "unrated" for c in non_auth01), (
+        "expected all non-AUTH-01 checks to be 'unrated'"
+    )
+    # AUTH-01 gets partial credit (agent name declared)
+    assert by_id["AUTH-01"]["status"] == "warn"
+    assert by_id["AUTH-01"]["score"] == 2.0
+
+
+def test_analyze_agent_empty_url_evidence_diagnostic():
+    """Unrated checks carry the 'no website provided' diagnostic in their evidence."""
+    ctrls = scanner.analyze_agent("", "SomeAgent", scan_mode="exact")["data"]["controls"]
+    non_auth01 = [c for c in ctrls if c["ctrl"] != "AUTH-01"]
+    for c in non_auth01:
+        evidence_text = " ".join(c.get("evidence") or [])
+        assert "no website" in evidence_text.lower(), (
+            f"{c['ctrl']} evidence does not mention 'no website': {c.get('evidence')}"
+        )
+
+
+def test_analyze_agent_empty_url_no_fabrication():
+    """Unrated checks all score 0 — no points awarded from non-existent web content."""
+    ctrls = scanner.analyze_agent("", "SomeAgent", scan_mode="exact")["data"]["controls"]
+    non_auth01 = [c for c in ctrls if c["ctrl"] != "AUTH-01"]
+    assert all(c["score"] == 0.0 for c in non_auth01), (
+        "non-AUTH-01 checks must not receive fabricated scores"
+    )
+
+
 def test_extract_token_info_detects_token_and_ca():
     ti = scanner.extract_token_info(
         html="Buy $SECURE now! CA: 0x1234567890abcdef1234567890abcdef12345678",
