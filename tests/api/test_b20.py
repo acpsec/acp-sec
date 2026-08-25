@@ -187,7 +187,7 @@ def test_one_response_serves_all_three_layers():
         body["issuer_powers"].keys())
     assert body["dimensions"]
     for dim in body["dimensions"].values():
-        assert set(dim.keys()) == {"score", "weight", "findings"}
+        assert set(dim.keys()) == {"score", "rated", "weight", "findings"}
     for k in ("raw_score", "multiplier", "unrated_dimensions",
               "critical_reasons", "scanner_version", "scanned_at"):
         assert k in body
