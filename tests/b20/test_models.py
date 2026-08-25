@@ -49,7 +49,7 @@ def _sample_result() -> ScanResult:
         dimensions={dim.name: dim},
         issuer_powers=powers,
         deployed_via_factory="0xB20f000000000000000000000000000000000000",
-        scanner_version="0.1.0",
+        scanner_version="0.6.0",
         scanned_at="2026-06-22T00:00:00Z",
     )
 
@@ -65,11 +65,12 @@ def test_top_level_keys_match_canonical_schema():
     }
 
 
-def test_dimensions_serialized_as_score_weight_findings():
+def test_dimensions_serialized_as_score_weight_rated_findings():
     d = _sample_result().to_dict()
     sup = d["dimensions"]["supply_integrity"]
-    assert set(sup.keys()) == {"score", "weight", "findings"}
+    assert set(sup.keys()) == {"score", "rated", "weight", "findings"}
     assert sup["score"] == 90.0
+    assert sup["rated"] is True
     assert sup["weight"] == 0.25
     assert sup["findings"] == [{"severity": "Medium", "detail": "x", "evidence": None}]
 
@@ -83,6 +84,36 @@ def test_issuer_powers_block_keys():
     }
     assert d["issuer_powers"]["can_freeze"] is True
     assert d["issuer_powers"]["supply_cap"] == "1000000000000000000000000"
+
+
+# ---------------------------------------------------------------------------
+# Gap 1: DimensionResult.to_dict() — score:null + rated:bool
+# ---------------------------------------------------------------------------
+
+def test_rated_dimension_serializes_score_as_number_and_rated_true():
+    dim = DimensionResult(name="supply_integrity", score=85.0, weight=0.25, rated=True)
+    d = dim.to_dict()
+    assert d["score"] == 85.0
+    assert d["rated"] is True
+
+
+def test_unrated_dimension_serializes_score_as_null_and_rated_false():
+    dim = DimensionResult(name="issuer_authority", score=100.0, weight=0.30, rated=False)
+    d = dim.to_dict()
+    assert d["score"] is None
+    assert d["rated"] is False
+
+
+def test_unrated_dimension_score_null_not_100():
+    # The false-safe: absence must not look like a perfect score.
+    dim = DimensionResult(name="issuer_authority", score=100.0, weight=0.30, rated=False)
+    d = dim.to_dict()
+    assert d["score"] != 100.0
+
+
+def test_dimension_dict_includes_rated_key():
+    dim = DimensionResult(name="supply_integrity", score=85.0, weight=0.25, rated=True)
+    assert "rated" in dim.to_dict()
 
 
 def test_scan_inputs_constructs_with_unknown_defaults():

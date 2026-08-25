@@ -8,4 +8,9 @@ re-expressed as ``acpsec_api.routers.b20``. ``__version__`` is preserved because
 the engine surfaces it as ``scanner_version`` in every scan payload.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+try:
+    __version__ = _pkg_version("acpsec")
+except PackageNotFoundError:
+    __version__ = "dev"
