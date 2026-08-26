@@ -53,7 +53,8 @@ def test_full_shape_and_score():
     assert d["multiplier"] == 1.0
     assert d["unrated_dimensions"] == []
     assert d["is_critical"] is False
-    assert d["scanner_version"] == "0.1.0"
+    from importlib.metadata import version as pkg_version
+    assert d["scanner_version"] == pkg_version("acpsec")
     assert d["scanned_at"] == _AT
 
 
@@ -126,6 +127,36 @@ def test_critical_and_unrated_take_the_lower():
     assert d["trust_score"] == 31
     assert d["trust_score"] < 39
     assert d["grade"] == "F"
+
+
+# ---------------------------------------------------------------------------
+# Gap 1: assess() output — unrated dimension score is null, rated:bool present
+# ---------------------------------------------------------------------------
+
+def test_assess_unrated_dimension_score_is_null_in_output():
+    # Wipe origin so it is unrated; confirm its serialized score is null.
+    d = assess(_wipe_origin(_good()), scanned_at=_AT).to_dict()
+    assert d["unrated_dimensions"] == ["origin_transparency"]
+    origin = d["dimensions"]["origin_transparency"]
+    assert origin["score"] is None
+    assert origin["rated"] is False
+
+
+def test_assess_rated_dimensions_have_numeric_score_and_rated_true():
+    d = assess(_good(), scanned_at=_AT).to_dict()
+    for key, dim in d["dimensions"].items():
+        assert isinstance(dim["score"], float), f"{key}: expected float, got {dim['score']!r}"
+        assert dim["rated"] is True, f"{key}: expected rated:true"
+
+
+# ---------------------------------------------------------------------------
+# Gap 3: scanner_version wired to package metadata
+# ---------------------------------------------------------------------------
+
+def test_scanner_version_matches_installed_package():
+    from importlib.metadata import version as pkg_version
+    d = assess(_good(), scanned_at=_AT).to_dict()
+    assert d["scanner_version"] == pkg_version("acpsec")
 
 
 def test_evidence_propagates_through_assess_to_dict():

@@ -116,7 +116,8 @@ class DimensionResult:
 
     def to_dict(self) -> dict:
         return {
-            "score": self.score,
+            "score": self.score if self.rated else None,
+            "rated": self.rated,
             "weight": self.weight,
             "findings": [f.to_dict() for f in self.findings],
         }

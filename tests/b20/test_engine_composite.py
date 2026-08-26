@@ -65,6 +65,60 @@ def test_grade_bands():
     assert grade_for(0) == "F"
 
 
+# ---------------------------------------------------------------------------
+# Gap 2: read_diagnostics coverage — every unrated dim must have an entry
+# ---------------------------------------------------------------------------
+
+def _origin_unrated_announcement_known() -> ScanInputs:
+    """issuer_has_history=None (tx-count failed), announcement_events=False (known).
+    origin_transparency is unrated; announcement read succeeded so no 'announcements'
+    diagnostic fires — only the tx_count path is missing.
+    """
+    return ScanInputs(
+        token="0xB200", chain_id=8453, variant="ASSET", decimals=18,
+        admin_is_multisig=True, admin_roles_revoked=False,
+        supply_cap=10**24,
+        can_freeze=False, can_seize=False, can_pause=False, is_paused=False,
+        policy_registry_active=False, memo_required=False, asymmetric_policy=False,
+        factory_is_official=True,
+        # origin: announcement_events known (False), issuer_has_history unknown (None)
+        announcement_events=False,
+        issuer_has_history=None,
+        read_diagnostics={"tx_count": "tx-count read returned None (RPC error or no issuer address)"},
+    )
+
+
+def test_origin_unrated_with_known_announcement_has_diagnostic():
+    # origin_transparency is unrated (issuer_has_history is None), but the
+    # announcements read succeeded. The tx_count source must explain origin in
+    # read_diagnostics.
+    d = assess(_origin_unrated_announcement_known(), scanned_at="2026-08-25T00:00:00Z").to_dict()
+    assert "origin_transparency" in d["unrated_dimensions"]
+    assert "origin_transparency" in d["read_diagnostics"], (
+        "origin_transparency is unrated but has no read_diagnostics entry"
+    )
+
+
+def test_every_unrated_dimension_has_a_read_diagnostics_entry():
+    # Layer-B invariant: the engine must produce a diagnostic for EVERY unrated
+    # dimension, even when the reader emitted no source key for it.
+    inp = ScanInputs(
+        token="0xB200", chain_id=8453, variant="ASSET", decimals=18,
+        # Wipe all load-bearing inputs → all five dimensions unrated
+        admin_is_multisig=None, admin_roles_revoked=None,
+        supply_cap=None,
+        can_freeze=None, can_seize=None, is_paused=None,
+        factory_is_official=None,
+        issuer_has_history=None, announcement_events=None,
+        read_diagnostics={},   # reader emitted nothing
+    )
+    d = assess(inp, scanned_at="2026-08-25T00:00:00Z").to_dict()
+    unrated = set(d["unrated_dimensions"])
+    diagnostics = set(d["read_diagnostics"].keys())
+    missing = unrated - diagnostics
+    assert not missing, f"Unrated dimensions with no diagnostic: {missing}"
+
+
 def test_grade_band_edge_via_assess():
     # Exact grade_for() band edges (75/74/60/59/40/39) are covered above. This
     # confirms the full assess() pipeline derives the grade from the FINAL

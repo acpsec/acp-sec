@@ -565,10 +565,15 @@ def read_origin(
     # when there is no admin history at all, or the txcount read itself fails.
     issuer = admin_holders[0] if admin_holders else admin_first_grantee
     issuer_has_history: Optional[bool] = None
-    if issuer is not None:
+    tx_count_read_error: Optional[str] = None
+    if issuer is None:
+        tx_count_read_error = "no issuer address available to read transaction history"
+    else:
         txc = _decode_uint(rpc.eth_get_transaction_count(issuer))
         if txc is not None:
             issuer_has_history = txc > 0
+        else:
+            tx_count_read_error = "eth_getTransactionCount returned None (RPC error)"
 
     logs = _get_logs_full_or_chunked(rpc, token, [C.B20_EVENT_ANNOUNCEMENT], chain_id, from_block=from_block)
     announcement_events = None if logs is None else len(logs) > 0
@@ -585,6 +590,7 @@ def read_origin(
     return {
         "issuer_wallet_age_days": None,  # TO BE IMPLEMENTED — needs archive node / indexer
         "issuer_has_history": issuer_has_history,
+        "tx_count_read_error": tx_count_read_error,
         "verified_entity": None,         # V1 placeholder (registry)
         "public_docs": None,             # V1 placeholder (off-chain)
         "announcement_events": announcement_events,
@@ -681,6 +687,8 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         read_diagnostics["roles"] = ROLE_NOT_DETERMINABLE
     if origin.get("announcement_read_error"):
         read_diagnostics["announcements"] = origin["announcement_read_error"]
+    if origin.get("tx_count_read_error"):
+        read_diagnostics["tx_count"] = origin["tx_count_read_error"]
 
     deployed_via_factory = C.OFFICIAL_FACTORY_ADDRESS.get(chain_id) if isb20 is True else None
 

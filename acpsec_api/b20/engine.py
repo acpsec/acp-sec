@@ -25,6 +25,7 @@ CRITICAL_SINGLE_EOA_ADMIN = "single_eoa_admin: DEFAULT_ADMIN_ROLE held by a sing
 _READ_SOURCE_DIMENSIONS = {
     "roles": ("issuer_authority", "transfer_policy"),
     "announcements": ("origin_transparency",),
+    "tx_count": ("origin_transparency",),
 }
 
 
@@ -104,6 +105,12 @@ def read_diagnostics_for(inputs: ScanInputs, unrated: list[str]) -> dict[str, st
         for dim in _READ_SOURCE_DIMENSIONS.get(source, ()):
             if dim in unrated_set:
                 out[dim] = reason
+    # Layer-B fallback: every unrated dimension must have a diagnostic entry.
+    # Prevents future gaps when new dimensions or read paths are added without
+    # updating _READ_SOURCE_DIMENSIONS.
+    for dim in unrated_set:
+        if dim not in out:
+            out[dim] = "unrated: no read diagnostic recorded"
     return out
 
 
