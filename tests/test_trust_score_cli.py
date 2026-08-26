@@ -1,14 +1,12 @@
 """Tests for the `acpsec trust-score` CLI command — TDD RED."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from click.testing import CliRunner
 
 from acpsec.cli import main
 from acpsec.trust_score.data.basescan import ContractData
-from acpsec.trust_score.data.slither_runner import SlitherFinding
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +263,8 @@ class TestIntegration:
                 )
             with open("out.json") as f:
                 data = json.load(f)
-            assert data["scanner_version"].startswith("acpsec-")
+            from importlib.metadata import version as pkg_version
+            assert data["scanner_version"] == pkg_version("acpsec")
 
 
 # ---------------------------------------------------------------------------

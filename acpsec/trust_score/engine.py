@@ -7,9 +7,14 @@ from datetime import datetime, timezone
 from .models import DimScore, Finding, SubScore, TrustScoreResult
 from .weights import CRITICAL_CAP, GRADE_BANDS, UNRATED_MULTIPLIER
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 _SEVERITY_ORDER = {"CRITICAL": 0, "High": 1, "Medium": 2, "Low": 3}
 
-SCANNER_VERSION = "acpsec-v0.5.0"
+try:
+    SCANNER_VERSION = _pkg_version("acpsec")
+except PackageNotFoundError:
+    SCANNER_VERSION = "dev"
 
 
 class TrustScoreEngine:
