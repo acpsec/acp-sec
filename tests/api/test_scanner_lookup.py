@@ -17,6 +17,7 @@ Contract:
 from __future__ import annotations
 
 from acpsec_api.scanner_auth import SCANNER_DENIED_ERROR
+from acpsec_api.scanner_lookup import NITTER_INSTANCES
 
 _MOCK_PROFILE = {
     "username": "agentx",
@@ -27,6 +28,9 @@ _MOCK_PROFILE = {
     "source": "nitter",
     "nitter_url": "https://nitter.poast.org/agentx",
     "error": None,
+    "fetch_status": "ok",
+    "nitter_instance": "https://nitter.poast.org",
+    "instance_errors": [],
 }
 
 _MOCK_FAILURE = {
@@ -40,6 +44,12 @@ _MOCK_FAILURE = {
         "Could not reach any Nitter instance — X is blocking scrapers. "
         "Please fill in the agent name and website URL manually."
     ),
+    "fetch_status": "all_failed",
+    "nitter_instance": None,
+    "instance_errors": [
+        {"instance": i, "error": "ConnectionError: timed out"}
+        for i in NITTER_INSTANCES
+    ],
 }
 
 
