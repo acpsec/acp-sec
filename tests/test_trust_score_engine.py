@@ -295,11 +295,13 @@ class TestAssess:
         assert result.scanned_at.endswith("Z") or "+" in result.scanned_at
         assert "T" in result.scanned_at
 
-    def test_scanner_version_default(self):
-        from acpsec.trust_score.engine import TrustScoreEngine
+    def test_scanner_version_matches_package_metadata(self):
+        from importlib.metadata import version as pkg_version
+        from acpsec.trust_score.engine import SCANNER_VERSION, TrustScoreEngine
+        assert SCANNER_VERSION == pkg_version("acpsec")
         engine = TrustScoreEngine()
         result = engine.assess("0xABCD", _all_clean())
-        assert result.scanner_version.startswith("acpsec-")
+        assert result.scanner_version == pkg_version("acpsec")
 
     def test_critical_overrides_even_perfect_underlying_score(self):
         from acpsec.trust_score.engine import TrustScoreEngine

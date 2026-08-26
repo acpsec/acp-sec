@@ -155,7 +155,7 @@ class TestTrustScoreResult:
             subscores=self._make_subscores(72),
             top_findings=[],
             scanned_at="2026-06-07T00:00:00Z",
-            scanner_version="acpsec-v0.5.0",
+            scanner_version="0.6.0",
         )
         assert r.agent == "0xABCD"
         assert r.erc8004_id == "agent.eth"
@@ -163,7 +163,7 @@ class TestTrustScoreResult:
         assert r.grade == "C"
         assert r.multiplier == 0.60
         assert r.critical is False
-        assert r.scanner_version == "acpsec-v0.5.0"
+        assert r.scanner_version == "0.6.0"
 
     def test_result_is_rated_by_default(self):
         from acpsec.trust_score.models import TrustScoreResult
