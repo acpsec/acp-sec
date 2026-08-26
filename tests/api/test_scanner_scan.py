@@ -8,7 +8,7 @@ fixture, so nothing touches the real dashboard files.
 Contract (dashboard/serve.py):
     gate denied        -> 401 (reuses 2.5a gate)
     not JSON           -> 415 {"error": "Content-Type must be application/json"}
-    missing url        -> 422 {"error": "'url' is required"}   (agent_name is NOT required)
+    missing url        -> 200 partial result (rated:false)    (agent_name is NOT required)
     engine unavailable -> 503 {"error": "scanner module not available"}
     engine ok:False    -> 422 <engine result verbatim>
     success            -> 200 <engine result, data enriched>  + side-effect writes
@@ -49,6 +49,23 @@ def _ok_result() -> dict:
                 {"ctrl": "AUTH-01", "severity": "CRITICAL", "status": "fail"},
                 {"ctrl": "CTX-01", "severity": "HIGH", "status": "pass"},
             ],
+            "token": {},
+        },
+    }
+
+
+def _partial_result() -> dict:
+    """Canned partial-scan result for no-website tests (engine stub return value)."""
+    return {
+        "ok": True,
+        "data": {
+            "agent_name": "No Website Agent",
+            "score_pct": 1.7,
+            "rated": False,
+            "no_website": True,
+            "limited_reason": "no-website-provided",
+            "methodology": "no-website-partial",
+            "controls": [],
             "token": {},
         },
     }
@@ -132,13 +149,38 @@ def test_scan_engine_failure_returns_422(scan_client, monkeypatch) -> None:
     assert lb_store.load()["agents"] == []
 
 
-def test_scan_missing_url(scan_client, monkeypatch) -> None:
+def test_scan_empty_url_returns_200(scan_client, monkeypatch) -> None:
+    """No url → 200 partial result, not 422."""
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
     make, _lb, _reports, _scan = scan_client
-    client = make(_StubEngine(_ok_result()))
-    resp = client.post("/api/scanner/scan", json={"agent_name": "No URL"})
-    assert resp.status_code == 422
-    assert resp.json() == {"error": "'url' is required"}
+    client = make(_StubEngine(_partial_result()))
+    resp = client.post("/api/scanner/scan", json={"agent_name": "No Website Agent"})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+def test_scan_empty_url_result_is_partial(scan_client, monkeypatch) -> None:
+    """No url → rated:false in the response data."""
+    monkeypatch.delenv("SCANNER_TOKEN", raising=False)
+    make, _lb, _reports, _scan = scan_client
+    client = make(_StubEngine(_partial_result()))
+    resp = client.post("/api/scanner/scan", json={"agent_name": "No Website Agent"})
+    data = resp.json()["data"]
+    assert data["rated"] is False
+    assert data["no_website"] is True
+    assert data["limited_reason"] == "no-website-provided"
+
+
+def test_scan_empty_url_calls_engine_with_empty_string(scan_client, monkeypatch) -> None:
+    """Router must forward empty url to the engine (not reject it internally)."""
+    monkeypatch.delenv("SCANNER_TOKEN", raising=False)
+    make, _lb, _reports, _scan = scan_client
+    stub = _StubEngine(_partial_result())
+    client = make(stub)
+    client.post("/api/scanner/scan", json={"agent_name": "No Website Agent"})
+    assert stub.calls, "engine was never called"
+    url_arg, _, _ = stub.calls[0]
+    assert url_arg == ""
 
 
 def test_scan_not_json(scan_client, monkeypatch) -> None:
