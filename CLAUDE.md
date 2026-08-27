@@ -168,6 +168,25 @@ git checkout main && git pull --ff-only && git checkout -b <new-branch>
 If you need to carry over uncommitted work, cherry-pick the specific commit(s) onto the
 new branch — never rebase or merge the old branch.
 
+### Bypass flags are off-limits without explicit permission
+
+`--admin`, `--force`, `--no-verify`, and similar bypass flags on merge, push, or branch
+protection are load-bearing safety mechanisms — do not use them unless the user
+explicitly asks.
+
+If a merge is blocked because the branch is out-of-date or CI hasn't run, **stop and
+report the blocker**. Do not route around it. The correct response is:
+
+1. Report what blocked the merge and why.
+2. Offer the right path forward (e.g. "update branch and wait for CI").
+3. Wait for the user to decide.
+
+**Why this matters:** The rule that caught PR #56 as a potential stale duplicate is the
+same rule that protects PR #49 from being merged blind against main. The process is the
+guard, not just the CI check itself. Using `--admin` to bypass an out-of-date branch
+skips the CI run that would have caught any merge-introduced regression — exactly the
+run that should have gated the merge.
+
 ### Checking whether work landed on main
 
 Do **not** check `git log main..HEAD` — that lies after a squash-merge.
