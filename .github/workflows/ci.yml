@@ -65,3 +65,23 @@ jobs:
         # Do NOT set B20_LIVE_RPC and do NOT pass `-m network` — those hit
         # public Base/Sepolia RPC.
         run: pytest tests/ -rs
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build Docker image
+        run: docker build . -t acpsec-ci-verify
+
+      - name: Verify no secrets baked into image layers
+        # Fails the build if any secret variable VALUE appears in layer history.
+        # Variable NAMES are expected (they appear in CMD/ENV instructions); only
+        # VALUES would indicate a secret was leaked via ARG or build-time ENV.
+        run: |
+          if docker history acpsec-ci-verify --no-trunc \
+            | grep -iE "SCANNER_TOKEN=[^ ]|LEADERBOARD_PASSWORD=[^ ]|ANTHROPIC_API_KEY=[^ ]|CDP_API_KEY=[^ ]|B20_RPC_URL.*=https"; then
+            echo "FAIL: secret values found in Docker layer history"
+            exit 1
+          fi
+          echo "PASS: no secret values in image layers"
