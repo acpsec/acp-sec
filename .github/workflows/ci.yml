@@ -1,7 +1,11 @@
-# CI — pytest gate for acp-sec.
+# CI — pytest gate + Docker image secret-leak gate for acp-sec.
 #
-# Single job, single Python version, no secrets. Runs the full test suite on
-# push and PR to main.
+# Two jobs, no secrets:
+#   test          — runs the full test suite on push and PR to main.
+#   docker-build  — builds the image and fails if any secret VALUE was baked
+#                   into layer history. Graceful no-op until the Dockerfile
+#                   lands (#48): when no Dockerfile is present it exits green so
+#                   the check can exist in branch protection ahead of the fix.
 name: CI
 
 on:
@@ -65,3 +69,41 @@ jobs:
         # Do NOT set B20_LIVE_RPC and do NOT pass `-m network` — those hit
         # public Base/Sepolia RPC.
         run: pytest tests/ -rs
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check for Dockerfile
+        # Graceful skip: until #48 lands there is no Dockerfile. Rather than fail,
+        # record its absence and let the build/verify steps no-op so this check
+        # can be added to branch protection BEFORE the Dockerfile arrives. Once
+        # #48 adds a Dockerfile, both steps below activate automatically.
+        id: check
+        run: |
+          if [ -f Dockerfile ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Dockerfile present — build + secret-leak verification will run."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile yet — skipping build cleanly (green)."
+          fi
+
+      - name: Build Docker image
+        if: steps.check.outputs.exists == 'true'
+        run: docker build . -t acpsec-ci-verify
+
+      - name: Verify no secrets baked into image layers
+        # Load-bearing check. Fails the build if any secret variable VALUE appears
+        # in layer history. Variable NAMES are expected (they appear in CMD/ENV
+        # instructions); only VALUES would indicate a secret was leaked via ARG
+        # or build-time ENV.
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          if docker history acpsec-ci-verify --no-trunc \
+            | grep -iE "SCANNER_TOKEN=[^ ]|LEADERBOARD_PASSWORD=[^ ]|ANTHROPIC_API_KEY=[^ ]|CDP_API_KEY=[^ ]|B20_RPC_URL.*=https"; then
+            echo "FAIL: secret values found in Docker layer history"
+            exit 1
+          fi
+          echo "PASS: no secret values in image layers"
