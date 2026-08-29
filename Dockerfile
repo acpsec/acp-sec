@@ -26,4 +26,6 @@ RUN pip install --no-cache-dir --no-deps . \
     && chown -R appuser /app
 USER appuser
 # PORT is injected by Railway at container start — never a build-time ARG or ENV.
-CMD ["sh", "-c", "uvicorn acpsec_api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# sh -c expands ${PORT:-8000}; `exec` replaces the shell with uvicorn so uvicorn
+# becomes PID 1 and receives Railway's SIGTERM directly (clean shutdown).
+CMD ["sh", "-c", "exec python -m uvicorn acpsec_api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
