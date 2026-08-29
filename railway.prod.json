@@ -1,7 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "dockerfilePath": "Dockerfile",
+    "builder": "NIXPACKS",
+    "buildCommand": "pip install -r requirements/prod.txt && pip install . --no-deps",
     "watchPatterns": [
       "acpsec/**",
       "!acpsec/acp_provider/**",
@@ -11,9 +12,7 @@
       "pyproject.toml",
       "requirements/prod.txt",
       "runtime.txt",
-      "railway.prod.json",
-      "Dockerfile",
-      ".dockerignore"
+      "railway.prod.json"
     ]
   },
   "deploy": {
