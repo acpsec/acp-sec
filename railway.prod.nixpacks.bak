@@ -1,7 +1,0 @@
-{
-  "NIXPACKS_BACKUP": "Preserved from railway.prod.json before Dockerfile migration (issue #48). To revert: copy build block back to railway.prod.json and delete Dockerfile.",
-  "build": {
-    "builder": "NIXPACKS",
-    "buildCommand": "pip install -r requirements/prod.txt && pip install . --no-deps"
-  }
-}
