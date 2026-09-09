@@ -172,12 +172,14 @@ def run_variant_config(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    # Load-bearing: factory_is_official. A non-official token (isB20 == false) is
-    # refused upstream in read_token (raises B20Unavailable), so this value is only
-    # ever True (official) or None (couldn't verify). Rate iff verified; None ->
-    # unrated (never inferred official). There is deliberately no
-    # `factory_is_official is False` branch — that state cannot reach the engine.
-    rated = inp.factory_is_official is not None
+    # Load-bearing: factory_is_official AND symbol. factory_is_official is only ever
+    # True (official) or None (unverified) — rate iff verified. symbol is load-bearing
+    # for the #66 impersonation check hosted here: if symbol() is unreadable (None
+    # after retries) the check cannot run, so the dimension is UNRATED and the
+    # uncertainty hits the score via the multiplier (same doctrine as #70
+    # can_seize -> transfer_policy) — never grade a token whose identity we could not
+    # verify. A readable symbol (verified / impersonation / non-ticker) keeps it rated.
+    rated = inp.factory_is_official is not None and inp.symbol is not None
 
     if inp.variant == "ASSET":
         if inp.decimals is not None and not (6 <= inp.decimals <= 18):

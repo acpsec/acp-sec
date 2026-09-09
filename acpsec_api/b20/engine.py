@@ -27,6 +27,8 @@ _READ_SOURCE_DIMENSIONS = {
     "roles": ("issuer_authority", "transfer_policy"),
     "announcements": ("origin_transparency",),
     "tx_count": ("origin_transparency",),
+    # #66: an unreadable symbol() unrates variant_config (impersonation check can't run).
+    "symbol": ("variant_config",),
 }
 
 
@@ -119,12 +121,6 @@ def read_diagnostics_for(inputs: ScanInputs, unrated: list[str]) -> dict[str, st
     for dim in unrated_set:
         if dim not in out:
             out[dim] = "unrated: no read diagnostic recorded"
-    # Always-surface: a symbol() read failure disables the #66 impersonation check.
-    # It is surfaced under its own "symbol" key regardless of any dimension's rated
-    # state, so the scan explicitly SAYS the check could not run (never silent).
-    sym = (inputs.read_diagnostics or {}).get("symbol")
-    if sym:
-        out["symbol"] = sym
     return out
 
 

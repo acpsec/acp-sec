@@ -216,3 +216,21 @@ scan (previously always `null`). Distinguish by `scanner_version`.
 **Severity demonstration (live):** the T4 fake "NVDAc" dropped **A/96 → F**; the real
 Coinbase NVDAc stays F (its own findings) but now carries `official_ticker_status:
 verified`. A non-stock B20 (BRIAN) is unaffected (`status: null`).
+
+### RPC quality is load-bearing for the impersonation check + role reads
+
+Both the #66 impersonation defense (`symbol()` read) and the role/announcement
+reads (`getLogs`) depend on a **getLogs-capable, non-throttled** RPC. The public
+`mainnet.base.org` (8453) is throttled enough that, during a full scan, it
+intermittently drops `symbol()` and rate-caps `getLogs` — which honestly degrades
+the scan (symbol unreadable → `variant_config` UNRATED + `read_diagnostics`
+entry; roles unreadable → `issuer_authority`/`transfer_policy` unrated) but is
+**not a false-safe** (never a false `verified`/`impersonation`, never a guessed
+capability). `symbol()` is retried 3× with backoff (metadata-only) to blunt this,
+but retries cannot fix a persistently-throttled endpoint.
+
+**Production MUST set `B20_RPC_URL_8453`** (and `B20_RPC_URL_84532`) to a paid,
+getLogs-capable provider (Alchemy PAYG / QuickNode / CDP / etc.) so the
+impersonation check and role reads are deterministic. Same conclusion as #24. This
+is Railway service config (`serviceInstance` env var), **not** code — set it in the
+Railway dashboard, do not hardcode a provider URL/key in the repo.

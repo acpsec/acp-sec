@@ -75,7 +75,7 @@ def _origin_unrated_announcement_known() -> ScanInputs:
     diagnostic fires — only the tx_count path is missing.
     """
     return ScanInputs(
-        token="0xB200", chain_id=8453, variant="ASSET", decimals=18,
+        token="0xB200", chain_id=8453, variant="ASSET", symbol="GOOD", decimals=18,
         admin_is_multisig=True, admin_roles_revoked=False,
         supply_cap=10**24,
         can_freeze=False, can_seize=False, can_pause=False, is_paused=False,
@@ -124,7 +124,7 @@ def test_grade_band_edge_via_assess():
     # confirms the full assess() pipeline derives the grade from the FINAL
     # trust_score, not raw_score, when the unrated multiplier crosses a band edge.
     inp = ScanInputs(
-        token="0xB200", chain_id=8453, variant="ASSET", decimals=18,
+        token="0xB200", chain_id=8453, variant="ASSET", symbol="GOOD", decimals=18,
         admin_is_multisig=True, supply_cap=10**24,
         can_freeze=False, can_seize=False, can_pause=False, is_paused=False,
         policy_registry_active=False, memo_required=False, asymmetric_policy=False,

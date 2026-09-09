@@ -170,4 +170,31 @@ def test_symbol_read_exhausted_stays_none_with_diagnostic(monkeypatch):
     assert "could not run" in inp.read_diagnostics["symbol"].lower()
     # surfaced in the assessed output (must SAY it couldn't check)
     out = assess(inp).to_dict()
-    assert "symbol" in out["read_diagnostics"]
+    assert "variant_config" in out["read_diagnostics"]  # normal unrated path
+
+
+# --------------------------------------------------------------------------
+# Unrate: symbol() unreadable -> the impersonation check can't run -> the whole
+# variant_config dimension is UNRATED (same doctrine as #70 can_seize), so the
+# uncertainty hits the score (0.5 multiplier), and the diagnostic flows through
+# the NORMAL unrated-dimension path (keyed by "variant_config").
+# --------------------------------------------------------------------------
+def test_variant_config_unrated_when_symbol_unreadable(monkeypatch):
+    monkeypatch.setattr(R, "_METADATA_BACKOFF", (0.0, 0.0), raising=False)
+    rpc = _FlakySymbol(_asset_with_symbol(8453, NVDAC_8453, "NVDAc", "NVIDIA"), fail_n=99)
+    inp = R.read_token(NVDAC_8453, 8453, rpc=rpc)
+    res = assess(inp)
+    d = res.to_dict()
+    assert inp.symbol is None
+    assert res.dimensions["variant_config"].rated is False          # UNRATED
+    assert "variant_config" in d["unrated_dimensions"]
+    assert d["multiplier"] == 0.5                                    # floor drops
+    assert "variant_config" in d["read_diagnostics"]                # normal path
+    assert "could not run" in d["read_diagnostics"]["variant_config"].lower()
+
+
+def test_variant_config_rated_when_symbol_readable():
+    # readable symbol (verified / impersonation / non-ticker) -> still rated
+    for addr, sym in [(NVDAC_8453, "NVDAc"), (IMP_8453, "NVDAc"), (IMP_8453, "GOOD")]:
+        inp = R.read_token(addr, 8453, rpc=_asset_with_symbol(8453, addr, sym))
+        assert assess(inp).dimensions["variant_config"].rated is True
