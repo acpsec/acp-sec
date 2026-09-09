@@ -119,3 +119,55 @@ def test_variant_config_verified_emits_positive_no_penalty():
     dim = run_variant_config(_inp("verified"))
     assert dim.score == 100.0
     assert any("official" in f.detail.lower() for f in dim.findings)
+
+
+# --------------------------------------------------------------------------
+# Metadata-read retry (name/symbol) — the impersonation check is a SECURITY
+# feature and must be deterministic on any RPC. symbol() is retried; a genuine
+# total failure stays None + records a diagnostic (never guesses).
+# --------------------------------------------------------------------------
+class _FlakySymbol:
+    """Wrap a FakeRpc: return None for the first ``fail_n`` symbol() eth_calls, then delegate."""
+
+    def __init__(self, inner, fail_n):
+        self._inner = inner
+        self._fail_n = fail_n
+        self.symbol_calls = 0
+
+    def eth_call(self, to, data, block="latest"):
+        if str(data).startswith(C.B20_SELECTOR_SYMBOL):
+            self.symbol_calls += 1
+            if self.symbol_calls <= self._fail_n:
+                return None
+        return self._inner.eth_call(to, data, block)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def test_symbol_retry_recovers_then_verifies(monkeypatch):
+    monkeypatch.setattr(R, "_METADATA_BACKOFF", (0.0, 0.0), raising=False)
+    rpc = _FlakySymbol(_asset_with_symbol(8453, NVDAC_8453, "NVDAc", "NVIDIA"), fail_n=2)
+    inp = R.read_token(NVDAC_8453, 8453, rpc=rpc)
+    assert inp.symbol == "NVDAc"
+    assert inp.official_ticker_status == "verified"
+
+
+def test_symbol_retry_stops_at_3_attempts(monkeypatch):
+    monkeypatch.setattr(R, "_METADATA_BACKOFF", (0.0, 0.0), raising=False)
+    rpc = _FlakySymbol(_asset_with_symbol(8453, NVDAC_8453, "NVDAc", "NVIDIA"), fail_n=99)
+    R.read_token(NVDAC_8453, 8453, rpc=rpc)
+    assert rpc.symbol_calls == 3
+
+
+def test_symbol_read_exhausted_stays_none_with_diagnostic(monkeypatch):
+    monkeypatch.setattr(R, "_METADATA_BACKOFF", (0.0, 0.0), raising=False)
+    rpc = _FlakySymbol(_asset_with_symbol(8453, NVDAC_8453, "NVDAc", "NVIDIA"), fail_n=99)
+    inp = R.read_token(NVDAC_8453, 8453, rpc=rpc)
+    assert inp.symbol is None                       # never guessed
+    assert inp.official_ticker_status is None        # not verified, not impersonation
+    assert "symbol" in inp.read_diagnostics
+    assert "could not run" in inp.read_diagnostics["symbol"].lower()
+    # surfaced in the assessed output (must SAY it couldn't check)
+    out = assess(inp).to_dict()
+    assert "symbol" in out["read_diagnostics"]

@@ -15,6 +15,7 @@ unrated. read_token raises ``B20Unavailable`` only for DEFINITIVE negatives
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional
 
 from . import constants as C
@@ -140,6 +141,31 @@ def _is_contract(rpc, addr: str) -> Optional[bool]:
     if code is None:
         return None
     return code not in ("0x", "0x0") and len(code) > 2
+
+
+# Backoff (seconds) before metadata-read retry attempts 2 and 3. Overridable in tests.
+_METADATA_BACKOFF: tuple[float, ...] = (0.2, 0.5)
+
+
+def _read_metadata_string(rpc, token: str, selector: str) -> Optional[str]:
+    """Read a metadata string (name/symbol) with bounded retries + short backoff.
+
+    These reads are LOAD-BEARING for the #66 impersonation check, so a rate-limited
+    RPC dropping a single eth_call must not silently disable the defense. Retries the
+    METADATA read ONLY (never getLogs). Returns None only after all attempts fail —
+    the caller then records a read_diagnostics entry and leaves the verdict None
+    (never guesses). Attempts = len(_METADATA_BACKOFF) + 1.
+    """
+    for i in range(len(_METADATA_BACKOFF) + 1):
+        if i:
+            time.sleep(_METADATA_BACKOFF[i - 1])
+        try:
+            value = _decode_string(rpc.eth_call(token, calldata(selector)))
+        except Exception:
+            value = None
+        if value is not None:
+            return value
+    return None
 
 
 def _has_role(rpc, token: str, role: str, holder: str) -> Optional[bool]:
@@ -547,9 +573,11 @@ def read_transfer_policy(rpc, token: str) -> dict:
 # --------------------------------------------------------------------------
 def read_variant_config(rpc, token: str, variant: Optional[str]) -> dict:
     decimals = _decode_uint(rpc.eth_call(token, calldata(C.B20_SELECTOR_DECIMALS)))
-    # name()/symbol() are IB20 (all variants) — read unconditionally (#66 gap fix).
-    name = _decode_string(rpc.eth_call(token, calldata(C.B20_SELECTOR_NAME)))
-    symbol = _decode_string(rpc.eth_call(token, calldata(C.B20_SELECTOR_SYMBOL)))
+    # name()/symbol() are IB20 (all variants) — read unconditionally (#66 gap fix),
+    # WITH retries: symbol() is load-bearing for the impersonation defense, so a
+    # rate-limited RPC dropping one eth_call must not silently disable the check.
+    name = _read_metadata_string(rpc, token, C.B20_SELECTOR_NAME)
+    symbol = _read_metadata_string(rpc, token, C.B20_SELECTOR_SYMBOL)
     currency_code = None
     if variant == "STABLECOIN":
         currency_code = _decode_string(rpc.eth_call(token, calldata(C.B20_SELECTOR_CURRENCY)))
@@ -724,6 +752,14 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         read_diagnostics["announcements"] = origin["announcement_read_error"]
     if origin.get("tx_count_read_error"):
         read_diagnostics["tx_count"] = origin["tx_count_read_error"]
+    # symbol() unreadable after retries — B20s always have a symbol, so None means a
+    # genuine read failure that DISABLED the #66 impersonation check. Say so; the
+    # verdict (official_ticker_status) honestly stays None (never guessed).
+    if vc["symbol"] is None:
+        read_diagnostics["symbol"] = (
+            "symbol read failed after retries — official-ticker impersonation check "
+            "(#66) could not run"
+        )
 
     deployed_via_factory = C.OFFICIAL_FACTORY_ADDRESS.get(chain_id) if isb20 is True else None
 
