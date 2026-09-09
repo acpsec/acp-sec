@@ -1,0 +1,164 @@
+{
+  "token": "0xB2000000000000000000004974A29F95372c579C",
+  "chain_id": 84532,
+  "variant": "ASSET",
+  "name": null,
+  "symbol": null,
+  "decimals": 18,
+  "currency_code": null,
+  "trust_score": 38,
+  "raw_score": 77,
+  "grade": "F",
+  "rated": false,
+  "multiplier": 0.5,
+  "unrated_dimensions": [
+    "transfer_policy"
+  ],
+  "read_diagnostics": {
+    "transfer_policy": "unrated: no read diagnostic recorded"
+  },
+  "is_critical": false,
+  "critical_reasons": [],
+  "dimensions": {
+    "issuer_authority": {
+      "score": 90.0,
+      "rated": true,
+      "weight": 0.3,
+      "findings": []
+    },
+    "supply_integrity": {
+      "score": 100.0,
+      "rated": true,
+      "weight": 0.25,
+      "findings": []
+    },
+    "transfer_policy": {
+      "score": null,
+      "rated": false,
+      "weight": 0.2,
+      "findings": []
+    },
+    "variant_config": {
+      "score": 100.0,
+      "rated": true,
+      "weight": 0.15,
+      "findings": []
+    },
+    "origin_transparency": {
+      "score": 100.0,
+      "rated": true,
+      "weight": 0.1,
+      "findings": []
+    }
+  },
+  "issuer_powers": {
+    "can_freeze": false,
+    "can_seize": null,
+    "can_burn_blocked": null,
+    "can_pause": null,
+    "can_mint_unbounded": false,
+    "supply_cap": "1000000000000000000000000000",
+    "admin_addresses": [
+      "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa"
+    ],
+    "admin_is_multisig": true,
+    "mint_role_holders": [
+      "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa"
+    ],
+    "pause_role_holders": []
+  },
+  "deployed_via_factory": "0xB20f000000000000000000000000000000000000",
+  "scanner_version": "0.6.0",
+  "scanned_at": "FIXTURE",
+  "evidence": {
+    "as_of_block": 46598653,
+    "roles": {
+      "0x0000000000000000000000000000000000000000000000000000000000000000": [
+        {
+          "role": "DEFAULT_ADMIN",
+          "address": "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa",
+          "grant": {
+            "kind": "event",
+            "tx_hash": "0x87aa27dcd9cc7de3842b33233aa2466fe80bcb92689411bf0853e700b76eb0cc",
+            "block_number": 46598624,
+            "log_index": 140
+          },
+          "revoke": null,
+          "has_role": {
+            "kind": "state",
+            "block_number": 46598653,
+            "raw_value": null,
+            "confirmed": true
+          },
+          "discrepancy": false
+        }
+      ],
+      "0x154c00819833dac601ee5ddded6fda79d9d8b506b911b3dbd54cdb95fe6c3686": [
+        {
+          "role": "MINT",
+          "address": "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa",
+          "grant": {
+            "kind": "event",
+            "tx_hash": "0x87aa27dcd9cc7de3842b33233aa2466fe80bcb92689411bf0853e700b76eb0cc",
+            "block_number": 46598624,
+            "log_index": 141
+          },
+          "revoke": null,
+          "has_role": {
+            "kind": "state",
+            "block_number": 46598653,
+            "raw_value": null,
+            "confirmed": true
+          },
+          "discrepancy": false
+        }
+      ]
+    },
+    "announcements": [
+      {
+        "kind": "event",
+        "tx_hash": "0x1fe4b3612d7c6122412f284e7178a0032b8d09d068d2002606fbaf435ad84687",
+        "block_number": 46598647,
+        "log_index": 353
+      },
+      {
+        "kind": "event",
+        "tx_hash": "0xe21807a45023534186f7978ed7ee67d36e51ca8ccc26889782900ebac60caeca",
+        "block_number": 46598648,
+        "log_index": 10
+      },
+      {
+        "kind": "event",
+        "tx_hash": "0x67c9bbf1b5c500e0a6d58641f12a126c1b3a6daec477352b8fa3e551e7ba461a",
+        "block_number": 46598648,
+        "log_index": 12
+      },
+      {
+        "kind": "event",
+        "tx_hash": "0x741dece17f344825330ede668141af8f63dd00548ebf86f4b4aeccfaf8976a01",
+        "block_number": 46598648,
+        "log_index": 14
+      },
+      {
+        "kind": "event",
+        "tx_hash": "0xa83438bd3d0b32c5337091fa4121ba61ccdb09261b75da7d290b60c8ad9952e0",
+        "block_number": 46598650,
+        "log_index": 2
+      }
+    ],
+    "state": {
+      "supply_cap": {
+        "kind": "state",
+        "block_number": 46598653,
+        "raw_value": "0x0000000000000000000000000000000000000000033b2e3c9fd0803ce8000000",
+        "confirmed": null
+      },
+      "decimals": {
+        "kind": "state",
+        "block_number": 46598653,
+        "raw_value": "0x0000000000000000000000000000000000000000000000000000000000000012",
+        "confirmed": null
+      }
+    }
+  }
+}

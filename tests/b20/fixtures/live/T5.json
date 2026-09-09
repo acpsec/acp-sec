@@ -1,0 +1,145 @@
+{
+  "token": "0xB2000000000000000000007a70991C614585bbB9",
+  "chain_id": 84532,
+  "variant": "ASSET",
+  "name": null,
+  "symbol": null,
+  "decimals": 18,
+  "currency_code": null,
+  "trust_score": 36,
+  "raw_score": 72,
+  "grade": "F",
+  "rated": false,
+  "multiplier": 0.5,
+  "unrated_dimensions": [
+    "transfer_policy"
+  ],
+  "read_diagnostics": {
+    "transfer_policy": "unrated: no read diagnostic recorded"
+  },
+  "is_critical": false,
+  "critical_reasons": [],
+  "dimensions": {
+    "issuer_authority": {
+      "score": 90.0,
+      "rated": true,
+      "weight": 0.3,
+      "findings": []
+    },
+    "supply_integrity": {
+      "score": 85.0,
+      "rated": true,
+      "weight": 0.25,
+      "findings": [
+        {
+          "severity": "Medium",
+          "detail": "rebasing multiplier is active",
+          "evidence": null
+        }
+      ]
+    },
+    "transfer_policy": {
+      "score": null,
+      "rated": false,
+      "weight": 0.2,
+      "findings": []
+    },
+    "variant_config": {
+      "score": 100.0,
+      "rated": true,
+      "weight": 0.15,
+      "findings": []
+    },
+    "origin_transparency": {
+      "score": 90.0,
+      "rated": true,
+      "weight": 0.1,
+      "findings": [
+        {
+          "severity": "Low",
+          "detail": "no on-chain announcement events",
+          "evidence": null
+        }
+      ]
+    }
+  },
+  "issuer_powers": {
+    "can_freeze": false,
+    "can_seize": null,
+    "can_burn_blocked": null,
+    "can_pause": null,
+    "can_mint_unbounded": false,
+    "supply_cap": "1000000000000000000000000000",
+    "admin_addresses": [
+      "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa"
+    ],
+    "admin_is_multisig": true,
+    "mint_role_holders": [
+      "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa"
+    ],
+    "pause_role_holders": []
+  },
+  "deployed_via_factory": "0xB20f000000000000000000000000000000000000",
+  "scanner_version": "0.6.0",
+  "scanned_at": "FIXTURE",
+  "evidence": {
+    "as_of_block": 46597901,
+    "roles": {
+      "0x0000000000000000000000000000000000000000000000000000000000000000": [
+        {
+          "role": "DEFAULT_ADMIN",
+          "address": "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa",
+          "grant": {
+            "kind": "event",
+            "tx_hash": "0xc5108af2555e030424ca408c73e931115795b8d9132d81b7084faa0812b16923",
+            "block_number": 46597890,
+            "log_index": 68
+          },
+          "revoke": null,
+          "has_role": {
+            "kind": "state",
+            "block_number": 46597901,
+            "raw_value": null,
+            "confirmed": true
+          },
+          "discrepancy": false
+        }
+      ],
+      "0x154c00819833dac601ee5ddded6fda79d9d8b506b911b3dbd54cdb95fe6c3686": [
+        {
+          "role": "MINT",
+          "address": "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa",
+          "grant": {
+            "kind": "event",
+            "tx_hash": "0xc5108af2555e030424ca408c73e931115795b8d9132d81b7084faa0812b16923",
+            "block_number": 46597890,
+            "log_index": 69
+          },
+          "revoke": null,
+          "has_role": {
+            "kind": "state",
+            "block_number": 46597901,
+            "raw_value": null,
+            "confirmed": true
+          },
+          "discrepancy": false
+        }
+      ]
+    },
+    "announcements": [],
+    "state": {
+      "supply_cap": {
+        "kind": "state",
+        "block_number": 46597901,
+        "raw_value": "0x0000000000000000000000000000000000000000033b2e3c9fd0803ce8000000",
+        "confirmed": null
+      },
+      "decimals": {
+        "kind": "state",
+        "block_number": 46597901,
+        "raw_value": "0x0000000000000000000000000000000000000000000000000000000000000012",
+        "confirmed": null
+      }
+    }
+  }
+}

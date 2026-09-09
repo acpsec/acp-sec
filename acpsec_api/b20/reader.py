@@ -602,6 +602,20 @@ def read_origin(
 # --------------------------------------------------------------------------
 # Orchestration: read_token -> ScanInputs
 # --------------------------------------------------------------------------
+def capability(holders: Optional[list[str]], granted_ever: bool = False) -> Optional[bool]:
+    # #70 doctrine restoration: a SUCCESSFUL role read is authoritative.
+    #   holders is None  -> read FAILED            -> None (unknown)
+    #   holders == []     -> read succeeded, empty  -> False (proven absence)
+    #   holders != []     -> read succeeded, held   -> True
+    # `None` now means ONLY "read failed". `granted_ever` is retained for
+    # call-site compatibility (granted-then-revoked already yields [] -> False)
+    # but no longer branches — a successful empty replay is proven absence
+    # regardless. See docs/deploy-runbook.md (scanner 0.7.0 semantic shift).
+    if holders is None:
+        return None
+    return len(holders) > 0
+
+
 def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     """Read all B20 config for ``address`` on ``chain_id`` into ScanInputs.
 
@@ -653,16 +667,6 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     )
 
     ge = roles["granted_ever"]
-
-    def capability(holders: Optional[list[str]], granted_ever: bool) -> Optional[bool]:
-        # Tri-state: currently-held True; granted-then-revoked False (KNOWN-absent);
-        # never-granted-in-logs None — B20 emits no role events, so an empty replay
-        # is NOT proof the role is unheld (issue #34).
-        if holders is None:
-            return None
-        if len(holders) > 0:
-            return True
-        return False if granted_ever else None
 
     # Admin revoked ONLY when a grant was observed then fully revoked (the #25
     # revoked-admin path — a KNOWN safest state). A never-granted empty replay is
