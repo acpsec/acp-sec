@@ -1,7 +1,7 @@
 """read_token orchestration + reader->engine end-to-end (rework)."""
 
 import pytest
-from tests.b20.conftest import FakeRpc
+from tests.b20.conftest import FakeRpc, abi_string
 
 from acpsec_api.b20 import constants as C
 from acpsec_api.b20 import reader as R
@@ -41,8 +41,10 @@ def _good_asset() -> FakeRpc:
     f.set_call(R.calldata(C.B20_SELECTOR_POLICY_ID, R.word(C.B20_POLICY_TRANSFER_SENDER)), "0x" + R.enc_uint(2))
     f.set_call(R.calldata(C.B20_SELECTOR_POLICY_ID, R.word(C.B20_POLICY_TRANSFER_RECEIVER)), "0x" + R.enc_uint(0))
     f.set_call(R.calldata(C.B20_SELECTOR_IS_PAUSED, R.enc_uint(C.B20_PAUSABLE_TRANSFER)), "0x" + R.enc_uint(0))
-    # variant config
+    # variant config (symbol is a neutral non-official ticker -> status None)
     f.set_selector(C.B20_SELECTOR_DECIMALS, "0x" + R.enc_uint(18))
+    f.set_selector(C.B20_SELECTOR_NAME, abi_string("Good Asset"))
+    f.set_selector(C.B20_SELECTOR_SYMBOL, abi_string("GOOD"))
     # origin
     f.set_txcount(ADMIN, "0x10")
     f.set_announcements(1)

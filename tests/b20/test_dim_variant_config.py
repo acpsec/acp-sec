@@ -5,6 +5,7 @@ from acpsec_api.b20.models import ScanInputs
 
 
 def _inp(**kw) -> ScanInputs:
+    kw.setdefault("symbol", "GOOD")  # real token has a symbol -> variant_config rated
     return ScanInputs(token="0xB200", chain_id=8453, **kw)
 
 

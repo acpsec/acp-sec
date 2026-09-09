@@ -16,6 +16,7 @@ from .models import DimensionResult, IssuerPowers, ScanEvidence, ScanInputs, Sca
 # Stable critical-reason identifiers (prefix : human-readable detail).
 CRITICAL_UNCAPPED_MINT = "uncapped_mint: supply cap equals type(uint128).max (infinite mint)"
 CRITICAL_SINGLE_EOA_ADMIN = "single_eoa_admin: DEFAULT_ADMIN_ROLE held by a single EOA without multisig"
+CRITICAL_IMPERSONATION = "impersonation: symbol() claims an official tokenized-stock ticker at a non-official address"
 
 # Which dimensions a capped getLogs read (keyed by read source in
 # ScanInputs.read_diagnostics) leaves unrated. Role reads gate issuer_authority
@@ -26,6 +27,8 @@ _READ_SOURCE_DIMENSIONS = {
     "roles": ("issuer_authority", "transfer_policy"),
     "announcements": ("origin_transparency",),
     "tx_count": ("origin_transparency",),
+    # #66: an unreadable symbol() unrates variant_config (impersonation check can't run).
+    "symbol": ("variant_config",),
 }
 
 
@@ -52,6 +55,13 @@ def detect_critical(inputs: ScanInputs) -> list[str]:
         and inputs.admin_is_multisig is False
     ):
         reasons.append(CRITICAL_SINGLE_EOA_ADMIN)
+
+    # (c) Impersonation of an official tokenized stock (#66/#55) — symbol() claims
+    # an official ticker at a non-official address/chain. A perfect fake of a
+    # regulated equity is maximal risk: force composite <= CRITICAL_CAP (grade F),
+    # same mechanism as (a)/(b). "verified"/None never assert.
+    if inputs.official_ticker_status == "impersonation":
+        reasons.append(CRITICAL_IMPERSONATION)
 
     return reasons
 

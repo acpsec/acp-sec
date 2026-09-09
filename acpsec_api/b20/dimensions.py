@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from .constants import DIMENSION_WEIGHTS, UINT128_MAX
+from .constants import DIMENSION_WEIGHTS, OFFICIAL_TOKENIZED_STOCKS, UINT128_MAX
 from .models import DimensionResult, Finding, ScanInputs
 
 _CURRENCY_CODE_RE = re.compile(r"[A-Z]+")
@@ -172,12 +172,14 @@ def run_variant_config(inp: ScanInputs) -> DimensionResult:
     findings: list[Finding] = []
     penalty = 0
 
-    # Load-bearing: factory_is_official. A non-official token (isB20 == false) is
-    # refused upstream in read_token (raises B20Unavailable), so this value is only
-    # ever True (official) or None (couldn't verify). Rate iff verified; None ->
-    # unrated (never inferred official). There is deliberately no
-    # `factory_is_official is False` branch — that state cannot reach the engine.
-    rated = inp.factory_is_official is not None
+    # Load-bearing: factory_is_official AND symbol. factory_is_official is only ever
+    # True (official) or None (unverified) — rate iff verified. symbol is load-bearing
+    # for the #66 impersonation check hosted here: if symbol() is unreadable (None
+    # after retries) the check cannot run, so the dimension is UNRATED and the
+    # uncertainty hits the score via the multiplier (same doctrine as #70
+    # can_seize -> transfer_policy) — never grade a token whose identity we could not
+    # verify. A readable symbol (verified / impersonation / non-ticker) keeps it rated.
+    rated = inp.factory_is_official is not None and inp.symbol is not None
 
     if inp.variant == "ASSET":
         if inp.decimals is not None and not (6 <= inp.decimals <= 18):
@@ -193,6 +195,25 @@ def run_variant_config(inp: ScanInputs) -> DimensionResult:
             # Medium band: a malformed currency code signals misconfiguration
             penalty += 15
             findings.append(Finding("Medium", "invalid Stablecoin currency code (must be uppercase A-Z)"))
+
+    # #66/#55 tokenized-stock impersonation. The engine's CRITICAL_IMPERSONATION cap
+    # does the heavy score-drop (composite -> F); this is the itemized, evidence-
+    # carrying finding (claimed ticker + expected official address), plus a positive
+    # signal for a verified official token.
+    if inp.official_ticker_status == "impersonation":
+        ticker = (inp.symbol or "").strip().upper()
+        pinned = OFFICIAL_TOKENIZED_STOCKS.get(inp.chain_id, {}).get(ticker)
+        if pinned:
+            detail = (f"impersonation: symbol '{inp.symbol}' claims official tokenized stock "
+                      f"{ticker}, but the official {ticker} is {pinned} on chain {inp.chain_id} "
+                      f"(this token is {inp.token})")
+        else:
+            detail = (f"impersonation: symbol '{inp.symbol}' claims official tokenized stock "
+                      f"{ticker}, but no official {ticker} is issued on chain {inp.chain_id}")
+        penalty += 20
+        findings.append(Finding("High", detail))
+    elif inp.official_ticker_status == "verified":
+        findings.append(Finding("Info", f"verified official Coinbase tokenized stock ({inp.symbol})"))
 
     return _result(name, penalty, rated, findings)
 

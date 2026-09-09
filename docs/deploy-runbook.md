@@ -189,3 +189,48 @@ mis-read `can_seize=false`. Mitigation in practice: on real large-history tokens
 Residual asymmetry: `#70` touches `capability()` only, **not** the parallel
 `admin_roles_revoked` path — so `issuer_authority` still goes UNRATED on a silent
 token while `transfer_policy` now rates. Aligning the admin path is a follow-up.
+
+## scanner 0.8.0 — tokenized-stock impersonation critical (#66/#55)
+
+**New critical condition** `CRITICAL_IMPERSONATION`. The reader now reads `name()`/
+`symbol()` (previously never read — #66 gap) and derives a tri-state
+`official_ticker_status` by a **symbol-only, case-insensitive** match against a
+**hardcoded, chain-scoped allowlist** (`constants.OFFICIAL_TOKENIZED_STOCKS`, the 10
+official Coinbase tokenized stocks from base.org/stocks, Base mainnet 8453 only):
+
+- `symbol` = an official ticker **and** address == its pinned address → **`verified`** (variant_config emits a positive "official tokenized stock" signal; no penalty).
+- `symbol` = an official ticker **but** a non-official address, or a chain with no pinned entry (e.g. any official ticker on Sepolia) → **`impersonation`** → `CRITICAL_IMPERSONATION` caps the composite at `CRITICAL_CAP` (grade **F**), same mechanism as `uncapped_mint`/`single_eoa_admin`; variant_config emits a High finding naming the claimed ticker + expected official address.
+- `symbol` not an official ticker → `None` (no flag). `name()` is surfaced but **not** used for the verdict.
+
+**Hard rule (scan-path isolation):** the allowlist is CODE; the scan path reads only
+the constant and **never** fetches base.org. Freshness is handled out-of-band by
+`scripts/refresh_tokenized_stocks.py` (fetch → diff → PR-ready code block, exits
+non-zero on drift). If base.org is down, only the refresh script fails; scans are
+unaffected. Refresh cadence: run when Coinbase lists new stocks (or on a schedule).
+
+**Migration note.** Pre-0.8.0 scans never carried `official_ticker_status` and never
+flagged impersonation — a fake tokenized stock could score up to grade A. From 0.8.0
+a fake (`impersonation`) is capped at F. `name`/`symbol` are now populated in every
+scan (previously always `null`). Distinguish by `scanner_version`.
+
+**Severity demonstration (live):** the T4 fake "NVDAc" dropped **A/96 → F**; the real
+Coinbase NVDAc stays F (its own findings) but now carries `official_ticker_status:
+verified`. A non-stock B20 (BRIAN) is unaffected (`status: null`).
+
+### RPC quality is load-bearing for the impersonation check + role reads
+
+Both the #66 impersonation defense (`symbol()` read) and the role/announcement
+reads (`getLogs`) depend on a **getLogs-capable, non-throttled** RPC. The public
+`mainnet.base.org` (8453) is throttled enough that, during a full scan, it
+intermittently drops `symbol()` and rate-caps `getLogs` — which honestly degrades
+the scan (symbol unreadable → `variant_config` UNRATED + `read_diagnostics`
+entry; roles unreadable → `issuer_authority`/`transfer_policy` unrated) but is
+**not a false-safe** (never a false `verified`/`impersonation`, never a guessed
+capability). `symbol()` is retried 3× with backoff (metadata-only) to blunt this,
+but retries cannot fix a persistently-throttled endpoint.
+
+**Production MUST set `B20_RPC_URL_8453`** (and `B20_RPC_URL_84532`) to a paid,
+getLogs-capable provider (Alchemy PAYG / QuickNode / CDP / etc.) so the
+impersonation check and role reads are deterministic. Same conclusion as #24. This
+is Railway service config (`serviceInstance` env var), **not** code — set it in the
+Railway dashboard, do not hardcode a provider URL/key in the repo.
