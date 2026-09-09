@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from .constants import DIMENSION_WEIGHTS, UINT128_MAX
+from .constants import DIMENSION_WEIGHTS, OFFICIAL_TOKENIZED_STOCKS, UINT128_MAX
 from .models import DimensionResult, Finding, ScanInputs
 
 _CURRENCY_CODE_RE = re.compile(r"[A-Z]+")
@@ -193,6 +193,25 @@ def run_variant_config(inp: ScanInputs) -> DimensionResult:
             # Medium band: a malformed currency code signals misconfiguration
             penalty += 15
             findings.append(Finding("Medium", "invalid Stablecoin currency code (must be uppercase A-Z)"))
+
+    # #66/#55 tokenized-stock impersonation. The engine's CRITICAL_IMPERSONATION cap
+    # does the heavy score-drop (composite -> F); this is the itemized, evidence-
+    # carrying finding (claimed ticker + expected official address), plus a positive
+    # signal for a verified official token.
+    if inp.official_ticker_status == "impersonation":
+        ticker = (inp.symbol or "").strip().upper()
+        pinned = OFFICIAL_TOKENIZED_STOCKS.get(inp.chain_id, {}).get(ticker)
+        if pinned:
+            detail = (f"impersonation: symbol '{inp.symbol}' claims official tokenized stock "
+                      f"{ticker}, but the official {ticker} is {pinned} on chain {inp.chain_id} "
+                      f"(this token is {inp.token})")
+        else:
+            detail = (f"impersonation: symbol '{inp.symbol}' claims official tokenized stock "
+                      f"{ticker}, but no official {ticker} is issued on chain {inp.chain_id}")
+        penalty += 20
+        findings.append(Finding("High", detail))
+    elif inp.official_ticker_status == "verified":
+        findings.append(Finding("Info", f"verified official Coinbase tokenized stock ({inp.symbol})"))
 
     return _result(name, penalty, rated, findings)
 

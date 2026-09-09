@@ -254,6 +254,10 @@ class ScanInputs:
     variant: Optional[str] = None          # "ASSET" | "STABLECOIN"
     name: Optional[str] = None
     symbol: Optional[str] = None
+    # #66/#55 tokenized-stock impersonation tri-state (symbol-only, case-insensitive):
+    # "verified" (official ticker at its pinned address) | "impersonation" (official
+    # ticker at a non-official address / chain) | None (no official ticker claimed).
+    official_ticker_status: Optional[str] = None
     decimals: Optional[int] = None
     currency_code: Optional[str] = None
 

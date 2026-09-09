@@ -188,3 +188,37 @@ B20_SEPOLIA_TEST_TOKENS = [
     "0xb20000000000000000000072484eb7abdf1d5a44",  # ASSET, decimals=6, cap=100000000000000
     "0xb200000000000000000001f537f694b33ad0718a",  # STABLECOIN
 ]
+
+
+# ==========================================================================
+# Official Coinbase tokenized stocks (impersonation defense — #66/#55)
+# --------------------------------------------------------------------------
+# RUNTIME SOURCE OF TRUTH, chain-scoped. The scan path reads ONLY this dict —
+# it NEVER fetches base.org. Refreshed OUT-OF-BAND by
+# scripts/refresh_tokenized_stocks.py (fetch -> code diff -> PR), never at scan
+# time. Addresses lowercased for case-insensitive comparison.
+# Pinned from base.org/stocks, verified live 2026-09-09 (Base mainnet 8453 only;
+# no official tokenized stocks exist on Sepolia).
+# ==========================================================================
+OFFICIAL_TOKENIZED_STOCKS: dict[int, dict[str, str]] = {
+    8453: {
+        "NVDAC": "0xb20000000000000000000078ee7ce2fe4908108c",
+        "METAC": "0xb2000000000000000000008bc8786b856e61707c",
+        "AAPLC": "0xb200000000000000000000c2e324d24d7eecd1fb",
+        "GOOGLC": "0xb2000000000000000000002d0ba3164cc74f58b7",
+        "AMZNC": "0xb200000000000000000000d9192b6b456483c2e8",
+        "MSFTC": "0xb200000000000000000000ab99cfa739e253872b",
+        "MSTRC": "0xb2000000000000000000004884b426556b92883d",
+        "SNDKC": "0xb200000000000000000000397293cb8cda9a10c5",
+        "SPCXC": "0xb2000000000000000000007b9fcbd005511acbd5",
+        "TSLAC": "0xb2000000000000000000001e800a7f5189430cd0",
+    },
+    # 84532 intentionally ABSENT — no official issuance on Sepolia.
+}
+
+# Global set of official tickers (UPPER-cased) — "does this token CLAIM an official
+# ticker?" independent of chain. A claimed ticker on a chain with no pinned address
+# for it (e.g. any official ticker on Sepolia) is an impersonation.
+OFFICIAL_TICKERS: frozenset[str] = frozenset(
+    t for m in OFFICIAL_TOKENIZED_STOCKS.values() for t in m
+)

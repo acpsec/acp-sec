@@ -547,10 +547,14 @@ def read_transfer_policy(rpc, token: str) -> dict:
 # --------------------------------------------------------------------------
 def read_variant_config(rpc, token: str, variant: Optional[str]) -> dict:
     decimals = _decode_uint(rpc.eth_call(token, calldata(C.B20_SELECTOR_DECIMALS)))
+    # name()/symbol() are IB20 (all variants) — read unconditionally (#66 gap fix).
+    name = _decode_string(rpc.eth_call(token, calldata(C.B20_SELECTOR_NAME)))
+    symbol = _decode_string(rpc.eth_call(token, calldata(C.B20_SELECTOR_SYMBOL)))
     currency_code = None
     if variant == "STABLECOIN":
         currency_code = _decode_string(rpc.eth_call(token, calldata(C.B20_SELECTOR_CURRENCY)))
-    return {"variant": variant, "decimals": decimals, "currency_code": currency_code}
+    return {"variant": variant, "decimals": decimals, "currency_code": currency_code,
+            "name": name, "symbol": symbol}
 
 
 # --------------------------------------------------------------------------
@@ -602,6 +606,28 @@ def read_origin(
 # --------------------------------------------------------------------------
 # Orchestration: read_token -> ScanInputs
 # --------------------------------------------------------------------------
+def classify_official_ticker(symbol: Optional[str], chain_id: int, token: str) -> Optional[str]:
+    """#66/#55 tokenized-stock impersonation — symbol-only, case-insensitive.
+
+      None            — symbol is not an official ticker (no impersonation signal)
+      "verified"      — official ticker AND token == its pinned address on this chain
+      "impersonation" — official ticker but a non-official address, OR a chain with no
+                        pinned entry for it (e.g. any official ticker on Sepolia)
+
+    Pure: reads ONLY the hardcoded ``constants.OFFICIAL_TOKENIZED_STOCKS`` allowlist —
+    never touches the network, so it can never fail on the scan path.
+    """
+    if not symbol:
+        return None
+    ticker = symbol.strip().upper()
+    if ticker not in C.OFFICIAL_TICKERS:
+        return None
+    pinned = C.OFFICIAL_TOKENIZED_STOCKS.get(chain_id, {}).get(ticker)
+    if pinned is not None and token.lower() == pinned.lower():
+        return "verified"
+    return "impersonation"
+
+
 def capability(holders: Optional[list[str]], granted_ever: bool = False) -> Optional[bool]:
     # #70 doctrine restoration: a SUCCESSFUL role read is authoritative.
     #   holders is None  -> read FAILED            -> None (unknown)
@@ -643,6 +669,12 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     if is_activated(rpc, variant) is False:
         raise B20Unavailable(f"B20 {variant} is not activated on chain {chain_id}")
 
+    # Read name/symbol/decimals EARLY — before the getLogs-heavy role/creation scans.
+    # The impersonation defense (#66/#55) depends on symbol() reading reliably; on a
+    # rate-limited public RPC the getLogs storm can exhaust the budget and make later
+    # eth_calls (name/symbol) return None, which would silently skip the check.
+    vc = read_variant_config(rpc, address, variant)
+
     # Bound the historical log scans (roles, announcements) to the token's life.
     # Scanning from genesis would mean ~21K range-capped getLogs calls; starting
     # at creation makes it feasible. If the creation block can't be determined
@@ -660,7 +692,6 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
     pause = roles["pause"]
     supply = read_supply(rpc, address, variant)
     policy = read_transfer_policy(rpc, address)
-    vc = read_variant_config(rpc, address, variant)
     origin = read_origin(
         rpc, address, admin, chain_id, from_block,
         admin_first_grantee=roles["admin_first_grantee"],
@@ -710,6 +741,10 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         token=address,
         chain_id=chain_id,
         variant=variant,
+        name=vc["name"],
+        symbol=vc["symbol"],
+        # #66/#55: pure allowlist check over the (just-read) symbol — no network.
+        official_ticker_status=classify_official_ticker(vc["symbol"], chain_id, address),
         decimals=vc["decimals"],
         currency_code=vc["currency_code"],
         # issuer authority (role holders via log replay)
