@@ -331,17 +331,28 @@ def test_never_granted_admin_is_unknown_not_revoked():
     assert assess(inp).dimensions["issuer_authority"].rated is False
 
 
-def test_never_granted_roles_make_capabilities_unknown():
+def test_never_granted_roles_resolve_false_when_read_succeeds_option_a():
+    # #70 (Option A): a SUCCESSFUL empty role replay is proven absence -> False,
+    # even for a genuinely-silent token (no events at all), so transfer_policy RATES.
+    # KNOWN tradeoff (docs/deploy-runbook.md, 0.7.0): a silent token that actually
+    # holds seize/pause in precompile-internal state would be mis-read False here.
+    # Mitigated in practice: on real large-history tokens the public-RPC getLogs
+    # range cap makes the read FAIL (holders=None -> can_seize None), not empty.
     inp = R.read_token(ASSET, 84532, rpc=_no_role_events_asset())
-    assert inp.can_seize is None                           # not False
-    assert inp.can_pause is None
-    assert assess(inp).dimensions["transfer_policy"].rated is False
+    assert inp.can_seize is False
+    assert inp.can_pause is False
+    assert assess(inp).dimensions["transfer_policy"].rated is True
 
 
-def test_never_granted_roles_surface_read_diagnostic():
+def test_never_granted_admin_surfaces_read_diagnostic():
+    # #70 leaves the admin_roles_revoked path unchanged, so issuer_authority stays
+    # UNRATED for a silent token (its diagnostic remains); transfer_policy now RATES
+    # (can_seize=False) and drops out of read_diagnostics. Documents the residual
+    # admin-vs-capability doctrine asymmetry (see runbook / follow-up).
     d = assess(R.read_token(ASSET, 84532, rpc=_no_role_events_asset())).to_dict()
     diag = d["read_diagnostics"]
-    assert "issuer_authority" in diag and "transfer_policy" in diag
+    assert "issuer_authority" in diag
+    assert "transfer_policy" not in diag
     assert "not determinable" in diag["issuer_authority"].lower()
 
 
@@ -388,17 +399,18 @@ def test_seize_role_granted_then_revoked_makes_can_seize_false():
     assert R.read_token(ASSET, 84532, rpc=f).can_seize is False
 
 
-def test_seize_role_never_granted_makes_can_seize_none():
-    # B20 emits no role events, so a never-granted SEIZE_ROLE is UNKNOWN, not False.
-    assert R.read_token(ASSET, 84532, rpc=_asset_without_seize_events()).can_seize is None
+def test_seize_role_never_granted_makes_can_seize_false():
+    # #70: on an event-emitting token a never-granted SEIZE_ROLE is a SUCCESSFUL
+    # empty read -> proven absence -> False (was None under the #34 doctrine).
+    assert R.read_token(ASSET, 84532, rpc=_asset_without_seize_events()).can_seize is False
 
 
 def test_burn_blocked_holder_alone_does_not_imply_can_seize():
     # Regression for the #37 false-safe: a LIVE BURN_BLOCKED_ROLE holder with NO
-    # SEIZE_ROLE must read can_seize UNKNOWN (None). The old code read seize off
-    # BURN_BLOCKED_ROLE and returned True here — a false "cannot/​can seize".
+    # SEIZE_ROLE must NOT read can_seize=True. #37 intent preserved under #70 —
+    # can_seize now reads False (proven no seize), still != True.
     f = _asset_without_seize_events().grant_role(C.B20_ROLE_BURN_BLOCKED, BB_H, 7)
-    assert R.read_token(ASSET, 84532, rpc=f).can_seize is None
+    assert R.read_token(ASSET, 84532, rpc=f).can_seize is False
 
 
 # --------------------------------------------------------------------------
@@ -421,9 +433,10 @@ def test_can_burn_blocked_false_when_granted_then_revoked():
     assert R.read_token(ASSET, 84532, rpc=f).can_burn_blocked is False
 
 
-def test_can_burn_blocked_none_when_never_granted():
-    # _good_asset grants no BURN_BLOCKED_ROLE events -> UNKNOWN (#34), not False.
-    assert R.read_token(ASSET, 84532, rpc=_good_asset()).can_burn_blocked is None
+def test_can_burn_blocked_false_when_never_granted():
+    # #70: _good_asset emits role events but never grants BURN_BLOCKED_ROLE -> a
+    # SUCCESSFUL empty read -> proven absence -> False (was None under #34).
+    assert R.read_token(ASSET, 84532, rpc=_good_asset()).can_burn_blocked is False
 
 
 def test_can_burn_blocked_is_independent_of_can_seize():

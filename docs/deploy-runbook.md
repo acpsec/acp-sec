@@ -135,3 +135,57 @@ docker history acpsec-ci-verify --no-trunc \
 > (it graceful-skips green when no Dockerfile is present). `docker-build` is a
 > required status check in branch protection, so a leak blocks the merge — the
 > local run above is a fast pre-flight, not a substitute.
+
+## scanner 0.7.0 — B20 capability doctrine shift (#70)
+
+**What changed.** The B20 reader's `capability()` (roles → `can_seize` / `can_pause`
+/ `can_burn_blocked` / `burn_enabled`) previously returned a **tri-state**:
+`True` (held), `False` (granted-then-revoked), `None` (never-granted — treated as
+*unknown*, per the #34 premise that B20 sets initial roles event-lessly). From
+**0.7.0** a **successful** role read is authoritative:
+
+| role getLogs result | pre-0.7.0 | 0.7.0+ |
+|---|---|---|
+| read FAILED (`holders is None`) | `None` | `None` (unchanged — still "unknown") |
+| read succeeded, **empty** | `None` | **`False`** (proven absence) |
+| read succeeded, held | `True` | `True` |
+
+`None` now means **only "read failed"** (a `read_diagnostics` entry is present).
+
+**Why.** On event-emitting tokens (verified: base-forge v1.1.0 emits
+`RoleGranted`/`RoleRevoked` for creation-time grants too), a never-granted SEIZE
+made `can_seize=None` → `transfer_policy` UNRATED → the 0.5 unrated multiplier
+floored **every fresh token** to ~F/38 regardless of real risk. Restoring the
+doctrine lets `transfer_policy` rate.
+
+**Score impact — same token, same chain state, re-read across the boundary:**
+
+| adversarial token | pre-0.7.0 | 0.7.0 |
+|---|---|---|
+| T4 (name/symbol "NVDAc", `0x…33379Ddc`) | F / 38 / unrated | **A / 96 / rated** |
+| T3 (5 empty announcements, `0x…372c579C`) | F / 38 | **A / 97** |
+| T2 (2nd MINT holder, `0x…928b3258`) | F / 38 | **A / 96** |
+| T1 (cap = uint128.max−1, `0x…D6993089`) | F / 38 | **A / 96** |
+
+Regression contract = the fixture pair
+`tests/b20/fixtures/live/T4-nvdac-impersonation-2026-09-09.json` (pre-fix) vs
+`T4-nvdac-post-70-fix.json` (post-fix). The floor lift is what makes the
+impersonation (#66), cap knife-edge (#67), announcement (#68) and mint-distribution
+(#69) findings visible as **grade-A** false-safes rather than F-floored.
+
+**Migration note — archived scans.** A pre-0.7.0 scan recording `can_X: null` may
+mean **either** "unread" **or** "never granted". From 0.7.0, `null` means **only
+"unread"** (a `read_diagnostics` entry accompanies it) and never-granted resolves
+to `false`. Any persisted/leaderboard B20 result from before 0.7.0 carries the old
+semantics and a lower (floored) grade until **re-scanned**. Distinguish by
+`scanner_version` in the payload.
+
+**KNOWN tradeoff (Option A).** The fix is unconditional: a **successful empty**
+read → `False`, even for a genuinely *silent* token (no role events at all). A
+silent token that actually holds seize/pause in precompile-internal state would be
+mis-read `can_seize=false`. Mitigation in practice: on real large-history tokens
+(fixb20/BRIAN) the public-RPC `getLogs` range cap makes the role read **fail**
+(`holders=None` → `null`), not return empty, so the mis-read does not trigger there.
+Residual asymmetry: `#70` touches `capability()` only, **not** the parallel
+`admin_roles_revoked` path — so `issuer_authority` still goes UNRATED on a silent
+token while `transfer_policy` now rates. Aligning the admin path is a follow-up.

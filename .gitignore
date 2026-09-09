@@ -57,3 +57,6 @@ scans/*.json
 # ── Local smoke test artifacts (also covered by *.log above; pinned for clarity) ──
 staging-smoke.log
 smoke-*.log
+
+# throwaway B20 adversarial-test deploy env (not part of the build)
+contracts/attack/

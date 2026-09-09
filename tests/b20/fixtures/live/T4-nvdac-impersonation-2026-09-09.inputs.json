@@ -1,0 +1,91 @@
+{
+  "token": "0xB200000000000000000000B80043b0fD33379Ddc",
+  "chain_id": 84532,
+  "variant": "ASSET",
+  "name": null,
+  "symbol": null,
+  "decimals": 18,
+  "currency_code": null,
+  "admin_holders": [
+    "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa"
+  ],
+  "admin_is_multisig": true,
+  "admin_roles_revoked": false,
+  "mint_role_holders": [
+    "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa"
+  ],
+  "burn_role_holders": [],
+  "pause_role_holders": [],
+  "pause_holder_is_multisig": null,
+  "supply_cap": 1000000000000000000000000000,
+  "multiplier_active": false,
+  "burn_enabled": null,
+  "policy_registry_active": false,
+  "can_freeze": false,
+  "can_seize": null,
+  "can_burn_blocked": null,
+  "can_pause": null,
+  "is_paused": false,
+  "memo_required": null,
+  "asymmetric_policy": false,
+  "deployed_via_factory": "0xB20f000000000000000000000000000000000000",
+  "factory_is_official": true,
+  "issuer_wallet_age_days": null,
+  "issuer_has_history": true,
+  "verified_entity": null,
+  "public_docs": null,
+  "announcement_events": false,
+  "read_diagnostics": {},
+  "as_of_block": 46598603,
+  "role_evidence": {
+    "0x0000000000000000000000000000000000000000000000000000000000000000": [
+      {
+        "address": "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa",
+        "grant": {
+          "tx_hash": "0xdd4c599b4d06a8a477e9448fafd0fc4fa019e0eb76df2cdc6d7941f0b97e2dd5",
+          "block_number": 46598599,
+          "log_index": 78
+        },
+        "revoke": null,
+        "has_role": {
+          "block_number": 46598603,
+          "raw_value": null,
+          "confirmed": true
+        },
+        "discrepancy": false,
+        "role_name": "DEFAULT_ADMIN"
+      }
+    ],
+    "0x154c00819833dac601ee5ddded6fda79d9d8b506b911b3dbd54cdb95fe6c3686": [
+      {
+        "address": "0x197c7433d7b500691ad2ecef4dffc1b01c123dfa",
+        "grant": {
+          "tx_hash": "0xdd4c599b4d06a8a477e9448fafd0fc4fa019e0eb76df2cdc6d7941f0b97e2dd5",
+          "block_number": 46598599,
+          "log_index": 79
+        },
+        "revoke": null,
+        "has_role": {
+          "block_number": 46598603,
+          "raw_value": null,
+          "confirmed": true
+        },
+        "discrepancy": false,
+        "role_name": "MINT"
+      }
+    ]
+  },
+  "announcement_evidence": [],
+  "state_evidence": {
+    "supply_cap": {
+      "block_number": 46598603,
+      "raw_value": "0x0000000000000000000000000000000000000000033b2e3c9fd0803ce8000000",
+      "confirmed": null
+    },
+    "decimals": {
+      "block_number": 46598603,
+      "raw_value": "0x0000000000000000000000000000000000000000000000000000000000000012",
+      "confirmed": null
+    }
+  }
+}
