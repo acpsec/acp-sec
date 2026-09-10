@@ -146,6 +146,12 @@ def _is_contract(rpc, addr: str) -> Optional[bool]:
 # Backoff (seconds) before metadata-read retry attempts 2 and 3. Overridable in tests.
 _METADATA_BACKOFF: tuple[float, ...] = (0.2, 0.5)
 
+# Per-chunk retry for the getLogs chunk walk: a transient (non-range-cap) chunk
+# failure is retried before aborting, so one flaky chunk doesn't discard a long walk
+# (NVDAc had ~20 chunks; one timed out and killed the whole role read). Overridable in tests.
+_GETLOGS_CHUNK_ATTEMPTS: int = 3
+_GETLOGS_CHUNK_BACKOFF: tuple[float, ...] = (0.3, 0.8)
+
 
 def _read_metadata_string(rpc, token: str, selector: str) -> Optional[str]:
     """Read a metadata string (name/symbol) with bounded retries + short backoff.
@@ -250,25 +256,37 @@ def _get_logs_full_or_chunked(
             "toBlock": hex(end),
         })
 
-    # 1) One full-range query — a single getLogs on any provider that permits it.
+    # 1) One full-range query first — the cheapest path on a provider that permits
+    # it (ungated / small span).
     full = query(from_block, latest)
     if full is not None:
         return full
-    # Fall back to chunking ONLY for a definitive range/size rejection; a
-    # transient-exhausted or otherwise-definitive failure stays honestly unknown.
-    if getattr(rpc, "last_error_kind", None) != RANGE_CAP_KIND:
-        return None
+    # The full-range query FAILED for ANY reason (range cap, timeout, oversized,
+    # transient). Fall back to the chunk walk — gating this on RANGE_CAP_KIND only was
+    # the bug: NVDAc's ~2M-block full-range query TIMED OUT (last_error_kind != range
+    # cap) and dead-ended here instead of chunking, leaving roles unread.
 
-    # 2) Existing fixed per-chain chunk walk (public-RPC block-range caps), size
-    # overridable per chain via B20_GETLOGS_CHUNK_<chain_id> for wider-range providers.
+    # 2) Chunk walk (per-chain size, env-overridable via B20_GETLOGS_CHUNK_<chain_id>).
+    # Each chunk is RETRIED on a transient failure (timeout / 429) with short backoff —
+    # a long walk (NVDAc: ~20 chunks) must not be discarded because ONE chunk flaked
+    # (that was masking the whole read). A chunk that RANGE-CAPS is definitive (chunk
+    # still too big for the provider) -> stop; retries exhausted -> honest None.
     size = resolve_getlogs_chunk(chain_id)
     out: list = []
     start = from_block
     while start <= latest:
         end = min(start + size - 1, latest)
-        chunk = query(start, end)
+        chunk = None
+        for attempt in range(_GETLOGS_CHUNK_ATTEMPTS):
+            if attempt:
+                time.sleep(_GETLOGS_CHUNK_BACKOFF[min(attempt - 1, len(_GETLOGS_CHUNK_BACKOFF) - 1)])
+            chunk = query(start, end)
+            if chunk is not None:
+                break
+            if getattr(rpc, "last_error_kind", None) == RANGE_CAP_KIND:
+                return None   # chunk still range-capped -> definitive, whole walk doomed
         if chunk is None:
-            return None
+            return None       # transient failures exhausted -> honest None (last_error carried)
         out.extend(chunk)
         start = end + 1
     return out
@@ -364,6 +382,18 @@ def _range_cap_reason(rpc, what: str) -> Optional[str]:
     return f"{what} unavailable: provider getLogs range cap. {getattr(rpc, 'last_error', None)}"
 
 
+def _read_fail_reason(rpc, what: str) -> Optional[str]:
+    """Human reason an aggregated getLogs failed: the provider range-cap string when it
+    was a classified range cap, else the VERBATIM ``last_error`` (timeout / 429 / etc.).
+    Never discards the reason — the caller records it so the scan SAYS why the read
+    failed instead of the generic Layer-B "no read diagnostic recorded" (NVDAc gap)."""
+    cap = _range_cap_reason(rpc, what)
+    if cap:
+        return cap
+    err = getattr(rpc, "last_error", None)
+    return f"{what} failed: {err}" if err else f"{what} unavailable (no data from RPC)"
+
+
 def role_holders_all(
     rpc, token: str, chain_id: int, from_block: int = 0
 ) -> Optional[dict[str, tuple[list[str], Optional[str], dict]]]:
@@ -428,7 +458,7 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0, *, as_of_blo
     # DEFAULT_ADMIN first grantee (origin issuer-proxy fallback for fully-revoked
     # admins) comes from the same replay.
     all_roles = role_holders_all(rpc, token, chain_id, from_block)
-    read_error = _range_cap_reason(rpc, "Role reads") if all_roles is None else None
+    read_error = _read_fail_reason(rpc, "Role reads") if all_roles is None else None
 
     def detailed(role_hash: str) -> tuple[Optional[list[str]], Optional[str], dict]:
         if all_roles is None:      # merged read failed -> every role unknown
