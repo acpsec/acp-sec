@@ -147,11 +147,13 @@ def test_permanent_range_cap_yields_honest_none():
     assert R.role_holders(f, ASSET, MINT, 84532) is None
 
 
-def test_non_range_cap_failure_does_not_chunk():
-    # A non-range-cap getLogs failure must NOT trigger the chunk fallback.
+def test_non_range_cap_failure_now_attempts_chunk_fallback():
+    # NVDAc fix: a non-range-cap failure (e.g. a timeout) NOW falls back to the chunk
+    # walk (the safety net) instead of dead-ending after the full query. When the
+    # chunks ALSO fail, the result is an honest None — but the fallback WAS attempted.
     f = FakeRpc(84532).set_block_number(5000).set_logs_fail()
     assert R.role_holders(f, ASSET, MINT, 84532) is None
-    assert len(f.getlogs_calls) == 1
+    assert len(f.getlogs_calls) > 1   # full query + chunk-walk attempts (was 1 pre-fix)
 
 
 def test_classify_multisig_eoa_vs_contract():

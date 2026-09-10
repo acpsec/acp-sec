@@ -234,3 +234,36 @@ getLogs-capable provider (Alchemy PAYG / QuickNode / CDP / etc.) so the
 impersonation check and role reads are deterministic. Same conclusion as #24. This
 is Railway service config (`serviceInstance` env var), **not** code — set it in the
 Railway dashboard, do not hardcode a provider URL/key in the repo.
+
+### scanner 0.8.1 — getLogs full-range failure now falls back to chunking (robustness)
+
+**Reader-only robustness (no scoring change).** Root cause of NVDAc reading F/12 on
+prod (CDP): its history spans ~2M blocks, the single full-range `getLogs` **timed
+out**, and the chunk-walk fallback was gated on `RANGE_CAP_KIND` only — so a timeout
+dead-ended at `None` and the 100k chunk budget was never used, leaving roles unread
+(and the diagnostic said the generic "no read diagnostic recorded").
+
+Fixes in `reader.py`:
+1. `_get_logs_full_or_chunked`: after the full-range query fails for **any** reason
+   (range cap, **timeout**, oversized, transient), fall back to the chunk walk —
+   not only on `RANGE_CAP_KIND`. Preserves the full-first fast path (ungated / small
+   span) and the existing range-cap chunking (#32/#33).
+2. `read_roles`: when the role read fails, surface the **verbatim** `rpc.last_error`
+   (e.g. "Role reads failed: TimeoutError…") instead of discarding it — the scan now
+   SAYS why roles are unreadable.
+
+Effect: long-history B20s (NVDAc, GOOGLc, …) now read roles via the chunk walk on a
+getLogs-capable RPC. A very long history costs one doomed full-range query (its
+timeout) before chunking — acceptable; correctness over ~one timeout of latency.
+Still depends on a getLogs-capable `B20_RPC_URL_8453` (public base.org caps too low).
+
+**⚠️ Chunk size matters (live finding).** With `B20_GETLOGS_CHUNK_8453=100000`, a
+single 100k-block `getLogs` **persistently times out** on CDP for a dense-history
+token (NVDAc, ~2M blocks / 20 chunks) — the per-chunk retry can't rescue a
+persistent timeout. Measured live: chunk `100000` → FAIL (TimeoutError); chunk
+`20000` → **7 roles read**, full scan F/39 (uncapped_mint + single_eoa_admin, all
+dims rated, multiplier 1.0). **Set `B20_GETLOGS_CHUNK_8453=20000`** (Railway) — 100k
+is too aggressive for CDP. The reader changes (fallback + honest diagnostic +
+per-chunk retry) are necessary but NOT sufficient without a chunk size the provider
+can actually serve. (A future code option: adaptive halving on a chunk timeout so
+the size auto-adapts — deliberately not done here per the existing no-halving design.)
