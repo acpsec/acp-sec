@@ -66,7 +66,7 @@ def test_variant_unrated_when_factory_read_fails_though_variant_read_succeeds():
 def test_origin_unrated_when_announcement_read_fails_though_history_read_succeeds():
     # Both real reads (issuer_has_history, announcement_events) are load-bearing;
     # the other three inputs are un-implemented placeholders (always None).
-    r = run_origin_transparency(_inp(issuer_has_history=True, announcement_events=None))
+    r = run_origin_transparency(_inp(issuer_has_history=True, announcements_substantive=None))
     assert r.rated is False
 
 
@@ -94,6 +94,7 @@ def _uncapped_but_unread_asset(**over) -> ScanInputs:
         is_paused=False,
         issuer_has_history=True,
         announcement_events=True,
+        announcements_total=1, announcements_substantive=1,
         supply_cap=None,          # the failed load-bearing read
         multiplier_active=False,  # a readable sibling (kept it "rated" under any())
     )
@@ -133,6 +134,7 @@ def _clean_fully_read_asset(**over) -> ScanInputs:
         policy_registry_active=False,
         issuer_has_history=True,
         announcement_events=True,
+        announcements_total=1, announcements_substantive=1,
     )
     base.update(over)
     return _inp(**base)

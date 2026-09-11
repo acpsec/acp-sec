@@ -21,6 +21,20 @@ def abi_string(s: str) -> str:
     return "0x" + R.enc_uint(32) + R.enc_uint(len(raw)) + data
 
 
+def abi_3strings(a: str, b: str, c: str) -> str:
+    """ABI-encode three dynamic strings (Announcement id/description/uri) as event data."""
+    parts = [x.encode("utf-8") for x in (a, b, c)]
+    head_len = 3 * 32
+    tail = b""
+    offsets = []
+    for x in parts:
+        offsets.append(head_len + len(tail))
+        pad = (-len(x)) % 32
+        tail += len(x).to_bytes(32, "big") + x + b"\x00" * pad
+    head = b"".join(o.to_bytes(32, "big") for o in offsets)
+    return "0x" + (head + tail).hex()
+
+
 def _bool_word(b: bool) -> str:
     return "0x" + R.enc_uint(1 if b else 0)
 
@@ -168,10 +182,22 @@ class FakeRpc:
         return self
 
     def set_announcements(self, count: int) -> "FakeRpc":
+        # Bare announcements with EMPTY id/description/uri (the #68 junk case).
         self.announcement_logs = [
             {"topics": [C.B20_EVENT_ANNOUNCEMENT], "blockNumber": hex(i + 1), "logIndex": "0x0",
-             "transactionHash": "0x" + f"{i + 1:064x}"}
+             "transactionHash": "0x" + f"{i + 1:064x}", "data": abi_3strings("", "", "")}
             for i in range(count)
+        ]
+        return self
+
+    def set_announcements_desc(self, descs, uris=None) -> "FakeRpc":
+        """Announcements with real descriptions (and optional uris) for #68 tests."""
+        uris = uris or [""] * len(descs)
+        self.announcement_logs = [
+            {"topics": [C.B20_EVENT_ANNOUNCEMENT], "blockNumber": hex(i + 1), "logIndex": "0x0",
+             "transactionHash": "0x" + f"{i + 1:064x}",
+             "data": abi_3strings(f"id-{i}", descs[i], uris[i])}
+            for i in range(len(descs))
         ]
         return self
 

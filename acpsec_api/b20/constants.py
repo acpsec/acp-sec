@@ -50,6 +50,14 @@ UINT128_MAX: int = 2**128 - 1
 EFFECTIVELY_UNCAPPED_FRACTION: float = 0.5
 EFFECTIVELY_UNCAPPED_MIN: int = UINT128_MAX // 2
 
+# --- Announcement substance floor (#68) -----------------------------------
+# Minimum stripped description length for an announcement to count as SUBSTANTIVE
+# (i.e. to lift the "no disclosure" penalty). Data-justified: the shortest real
+# on-chain announcement observed is "Stock Split" (11 chars); 8 accepts every real
+# one with margin and rejects empty/whitespace/1-7-char noise. Announcements are
+# NEVER a bonus above baseline — issuer-controlled text can't raise trust.
+MIN_ANNOUNCEMENT_CHARS: int = 8
+
 # --- Scoring caps / multipliers (mirror acp-sec) --------------------------
 CRITICAL_CAP: int = 39          # any critical condition forces composite <= 39 (grade F)
 UNRATED_MULTIPLIER: float = 0.50  # applied when any dimension is unrated
