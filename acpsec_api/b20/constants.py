@@ -37,6 +37,19 @@ OFFICIAL_FACTORY_ADDRESS: dict[int, str] = {
 # infinite mint (a critical condition). CONFIRMED = B20Constants.MAX_SUPPLY_CAP.
 UINT128_MAX: int = 2**128 - 1
 
+# --- Effectively-uncapped supply threshold (#67) --------------------------
+# A cap in the top HALF of the uint128 range is treated as effectively-infinite
+# mint. Data-justified (verified live 2026-09): all 10 official Coinbase tokenized
+# stocks sit at the exact sentinel (uncapped by 1:1-backed design); every real
+# FIXED-cap token observed (BRIAN/Basecat/fixb20) is ~1e27 — 11 orders of magnitude
+# below. So the line is robust anywhere in that gap. Half-of-max catches the
+# sentinel, max-1 (the T1 evasion), and any near-sentinel value, clears every real
+# fixed cap by >11 oom, and is decimals-agnostic. EFFECTIVELY_UNCAPPED_FRACTION is
+# the tunable knob; the integer threshold is derived exactly (no float rounding on
+# a 2**128 value).
+EFFECTIVELY_UNCAPPED_FRACTION: float = 0.5
+EFFECTIVELY_UNCAPPED_MIN: int = UINT128_MAX // 2
+
 # --- Scoring caps / multipliers (mirror acp-sec) --------------------------
 CRITICAL_CAP: int = 39          # any critical condition forces composite <= 39 (grade F)
 UNRATED_MULTIPLIER: float = 0.50  # applied when any dimension is unrated
