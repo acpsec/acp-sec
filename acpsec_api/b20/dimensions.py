@@ -248,7 +248,9 @@ def run_origin_transparency(inp: ScanInputs) -> DimensionResult:
     # them would make this dimension permanently unrated. This is the lowest-
     # stakes dimension (no High/critical), but the no-infer discipline is the
     # same: rate only when both real reads land.
-    rated = inp.issuer_has_history is not None and inp.announcement_events is not None
+    # #68: announcements_substantive is the load-bearing announcement signal (not the
+    # raw count) — None means the read failed. issuer_has_history is the other read.
+    rated = inp.issuer_has_history is not None and inp.announcements_substantive is not None
 
     if inp.issuer_wallet_age_days is not None and inp.issuer_wallet_age_days < 30:
         # Medium band: a fresh issuer wallet has no track record
@@ -261,9 +263,33 @@ def run_origin_transparency(inp: ScanInputs) -> DimensionResult:
         # Medium band: no public docs reduces issuer accountability
         penalty += 15
         findings.append(Finding("Medium", "no public issuer documentation"))
-    if inp.announcement_events is False:
-        penalty += 10
-        findings.append(Finding("Low", "no on-chain announcement events"))
+
+    # #68 announcement substance. Issuer self-attestation the scanner can't verify:
+    # >=1 SUBSTANTIVE announcement lifts the "no disclosure" penalty (never a bonus
+    # above baseline); junk (empty/duplicate/too short) is neutral. For a VERIFIED
+    # 1:1-backed stock, absence is expected (discloses via regulated off-chain
+    # channels) -> Info, no penalty (#55 gate). Content is surfaced in
+    # evidence.announcements so consumers can read what the issuer claimed.
+    sub = inp.announcements_substantive
+    tot = inp.announcements_total
+    if sub is not None:
+        if sub >= 1:
+            pass  # substantive disclosure present — absence penalty lifted
+        elif inp.official_ticker_status == "verified":
+            findings.append(Finding(
+                "Info",
+                "no substantive on-chain announcements — expected for a verified "
+                "tokenized stock (discloses via regulated off-chain channels)",
+            ))
+        elif tot and tot > 0:
+            penalty += 10
+            findings.append(Finding(
+                "Low",
+                f"{tot} announcements, none substantive (empty/duplicate/too short)",
+            ))
+        else:
+            penalty += 10
+            findings.append(Finding("Low", "no on-chain announcements"))
 
     return _result(name, penalty, rated, findings)
 

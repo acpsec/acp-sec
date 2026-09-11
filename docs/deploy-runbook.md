@@ -295,3 +295,29 @@ From 0.9.0 a verified stock is no longer penalized for uncapped supply — its s
 rises (raw_score up; a stock with a single-EOA admin still hits that critical, so its
 grade may stay F for the honest reason). Any archived score for a verified stock
 pre-0.9.0 understated it; re-scan. Distinguish by `scanner_version`.
+
+## scanner 0.10.0 — announcement content, not just presence (#68)
+
+**Scoring semantics change.** Announcements are issuer self-attestation the scanner
+cannot verify, so they are NEVER a bonus above baseline — a **substantive** one only
+lifts the "no disclosure" penalty.
+
+- **classify_announcement**: substantive ⟺ `len(description.strip()) >= MIN_ANNOUNCEMENT_CHARS`
+  (8, data-justified — shortest real on-chain announcement "Stock Split" = 11) **AND**
+  not an exact duplicate of an earlier-seen stripped description on the same token.
+  Junk (empty/whitespace/under-floor/duplicate) is **neutral** — not counted, not
+  extra-penalized (can't distinguish gaming from a dev testing `announce()`).
+- **origin_transparency**: ≥1 substantive → absence penalty lifted (as "present" was);
+  0 substantive + unverified → Low, text distinguishes "no on-chain announcements"
+  (0 total) vs "N announcements, none substantive (empty/duplicate/too short)";
+  0 substantive + **verified** → **Info** "discloses via regulated off-chain channels"
+  (no penalty — #55 gate; Q4 confirmed official stocks are true 0-announcement by design).
+- **evidence.announcements** now populated (was always `[]`): per announcement —
+  `description, uri, block, tx, substantive, reason, uri_format_ok`. Consumers can READ
+  what the issuer claimed (the scanner can't verify truth). **URIs are format-validated
+  only, NEVER fetched** (Cloudflare/Nitter lesson — no network in the scan path).
+
+**Migration note.** Pre-0.10.0, *any* announcement lifted the penalty (gameable with
+empty posts — the T3 finding). From 0.10.0 only substantive disclosure counts, and a
+verified stock with no on-chain announcements is Info not Low. Re-scan for accurate
+origin_transparency. Distinguish by `scanner_version`.

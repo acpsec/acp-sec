@@ -9,7 +9,7 @@ from tests.b20.conftest import FakeRpc
 from acpsec_api.b20 import constants as C
 from acpsec_api.b20 import reader as R
 from acpsec_api.b20.engine import assess
-from acpsec_api.b20.models import EventEvidence, RoleHolderEvidence, ScanInputs, StateEvidence
+from acpsec_api.b20.models import AnnouncementEvidence, EventEvidence, RoleHolderEvidence, ScanInputs, StateEvidence
 
 ASSET = "0x" + "b2" + "00" * 9 + "00" + "aa" * 9
 ADMIN_H = "0x" + "a1" * 20
@@ -222,7 +222,7 @@ def test_read_origin_announcement_evidence_contains_event_evidence():
     evs = origin["announcement_evidence"]
     assert len(evs) == 1
     ev = evs[0]
-    assert isinstance(ev, EventEvidence)
+    assert isinstance(ev, AnnouncementEvidence)
     assert ev.tx_hash == "0xdeadbeef" + "00" * 28
     assert ev.block_number == 100
     assert ev.log_index == 1
@@ -296,7 +296,7 @@ def test_read_token_populates_announcement_evidence():
     inp = R.read_token(ASSET, 84532, rpc=_good_asset_rpc())
     assert isinstance(inp.announcement_evidence, list)
     assert len(inp.announcement_evidence) == 1
-    assert isinstance(inp.announcement_evidence[0], EventEvidence)
+    assert isinstance(inp.announcement_evidence[0], AnnouncementEvidence)
 
 
 def test_read_token_state_evidence_supply_cap():
@@ -348,6 +348,8 @@ def test_evidence_never_changes_verdict():
         issuer_has_history=inp_with_ev.issuer_has_history,
         verified_entity=inp_with_ev.verified_entity, public_docs=inp_with_ev.public_docs,
         announcement_events=inp_with_ev.announcement_events,
+        announcements_total=inp_with_ev.announcements_total,
+        announcements_substantive=inp_with_ev.announcements_substantive,
         read_diagnostics=inp_with_ev.read_diagnostics,
     )
     _AT = "2026-01-01T00:00:00Z"

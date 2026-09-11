@@ -22,6 +22,7 @@ def _good() -> ScanInputs:
         factory_is_official=True,
         issuer_wallet_age_days=400, issuer_has_history=True,
         verified_entity=True, public_docs=True, announcement_events=True,
+        announcements_total=1, announcements_substantive=1,
     )
 
 
@@ -31,6 +32,7 @@ def _wipe_origin(inp: ScanInputs) -> ScanInputs:
     inp.verified_entity = None
     inp.public_docs = None
     inp.announcement_events = None
+    inp.announcements_substantive = None
     return inp
 
 
@@ -105,6 +107,7 @@ def test_multiple_unrated_dimensions_still_half_multiplier():
     inp.verified_entity = None
     inp.public_docs = None
     inp.announcement_events = None
+    inp.announcements_substantive = None
     inp.supply_cap = None
     inp.multiplier_active = None
     inp.burn_enabled = None

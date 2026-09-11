@@ -15,11 +15,18 @@ unrated. read_token raises ``B20Unavailable`` only for DEFINITIVE negatives
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Optional
 
 from . import constants as C
-from .models import EventEvidence, RoleHolderEvidence, ScanInputs, StateEvidence
+from .models import (
+    AnnouncementEvidence,
+    EventEvidence,
+    RoleHolderEvidence,
+    ScanInputs,
+    StateEvidence,
+)
 from .rpc import RANGE_CAP_KIND, RpcClient
 
 _WAD = 10**18  # multiplier precision; multiplier() != WAD means rebasing active
@@ -618,6 +625,53 @@ def read_variant_config(rpc, token: str, variant: Optional[str]) -> dict:
 # --------------------------------------------------------------------------
 # Origin & transparency
 # --------------------------------------------------------------------------
+_URI_RE = re.compile(r"^(https?://|ipfs://)\S+$", re.IGNORECASE)
+
+
+def _valid_uri_format(uri: str) -> Optional[bool]:
+    """Format-only check (well-formed http(s)/ipfs). NEVER fetches. None when no uri."""
+    if not uri:
+        return None
+    return bool(_URI_RE.match(uri.strip()))
+
+
+def _decode_announcement(datahex: Optional[str]) -> tuple[str, str, str]:
+    """Decode an Announcement event's data → (id, description, uri): three ABI dynamic
+    strings. Degrades to empties on any malformed/short data (never raises)."""
+    if not datahex or datahex == "0x":
+        return "", "", ""
+    h = datahex[2:] if datahex.startswith("0x") else datahex
+    try:
+        b = bytes.fromhex(h)
+        out = []
+        for i in range(3):
+            off = int.from_bytes(b[i * 32:(i + 1) * 32], "big")
+            ln = int.from_bytes(b[off:off + 32], "big")
+            out.append(b[off + 32:off + 32 + ln].decode("utf-8", "replace"))
+        return out[0], out[1], out[2]
+    except Exception:
+        return "", "", ""
+
+
+def classify_announcement(description: str, uri: str, seen_stripped: set) -> tuple[bool, str]:
+    """#68 substance verdict → (substantive, reason).
+
+    substantive ⟺ len(description.strip()) >= MIN_ANNOUNCEMENT_CHARS AND the stripped
+    description is not an EXACT duplicate of one already seen on this token. Junk is
+    neutral (never extra-penalized). ``uri`` is format-validated only elsewhere and is
+    NEVER fetched — a link can't make issuer-controlled text more true, so it does not
+    affect the description verdict.
+    """
+    s = (description or "").strip()
+    if not s:
+        return False, "empty"
+    if len(s) < C.MIN_ANNOUNCEMENT_CHARS:
+        return False, f"under {C.MIN_ANNOUNCEMENT_CHARS} chars"
+    if s in seen_stripped:
+        return False, "duplicate"
+    return True, "substantive"
+
+
 def read_origin(
     rpc, token: str, admin_holders: Optional[list[str]], chain_id: int,
     from_block: int = 0, *, admin_first_grantee: Optional[str] = None,
@@ -638,16 +692,33 @@ def read_origin(
             tx_count_read_error = "eth_getTransactionCount returned None (RPC error)"
 
     logs = _get_logs_full_or_chunked(rpc, token, [C.B20_EVENT_ANNOUNCEMENT], chain_id, from_block=from_block)
-    announcement_events = None if logs is None else len(logs) > 0
     announcement_read_error = _range_cap_reason(rpc, "Announcement reads") if logs is None else None
-    announcement_evidence: list[EventEvidence] = []
+    announcement_events = None if logs is None else len(logs) > 0
+    announcement_evidence: list[AnnouncementEvidence] = []
+    announcements_total: Optional[int] = None
+    announcements_substantive: Optional[int] = None
     if logs is not None:
+        # Order matters for exact-duplicate dedup (earlier-seen wins). #68: decode the
+        # issuer's self-attested text, classify substance, surface it in evidence.
+        logs.sort(key=lambda lg: (int(lg["blockNumber"], 16), int(lg.get("logIndex", "0x0"), 16)))
+        seen: set[str] = set()
+        substantive_count = 0
         for lg in logs:
-            announcement_evidence.append(EventEvidence(
+            _id, desc, uri = _decode_announcement(lg.get("data"))
+            substantive, reason = classify_announcement(desc, uri, seen)
+            if substantive:
+                substantive_count += 1
+            seen.add((desc or "").strip())
+            announcement_evidence.append(AnnouncementEvidence(
                 tx_hash=lg.get("transactionHash"),
                 block_number=int(lg["blockNumber"], 16),
                 log_index=int(lg.get("logIndex", "0x0"), 16),
+                description=desc, uri=uri,
+                substantive=substantive, reason=reason,
+                uri_format_ok=_valid_uri_format(uri),
             ))
+        announcements_total = len(logs)
+        announcements_substantive = substantive_count
 
     return {
         "issuer_wallet_age_days": None,  # TO BE IMPLEMENTED — needs archive node / indexer
@@ -656,6 +727,8 @@ def read_origin(
         "verified_entity": None,         # V1 placeholder (registry)
         "public_docs": None,             # V1 placeholder (off-chain)
         "announcement_events": announcement_events,
+        "announcements_total": announcements_total,
+        "announcements_substantive": announcements_substantive,
         "announcement_read_error": announcement_read_error,
         "announcement_evidence": announcement_evidence,
     }
@@ -850,6 +923,8 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         verified_entity=origin["verified_entity"],
         public_docs=origin["public_docs"],
         announcement_events=origin["announcement_events"],
+        announcements_total=origin["announcements_total"],
+        announcements_substantive=origin["announcements_substantive"],
         read_diagnostics=read_diagnostics,
         as_of_block=as_of_block,
         role_evidence=roles["role_evidence"],

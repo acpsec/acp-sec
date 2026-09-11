@@ -33,6 +33,28 @@ class EventEvidence:
 
 
 @dataclass
+class AnnouncementEvidence:
+    """An on-chain Announcement, with the issuer's self-attested text surfaced so a
+    consumer can READ what was claimed (the scanner can't verify truth) + the #68
+    substance verdict. ``reason``: substantive | empty | under 8 chars | duplicate."""
+    tx_hash: Optional[str]
+    block_number: Optional[int]
+    log_index: Optional[int]
+    description: str
+    uri: str
+    substantive: bool
+    reason: str
+    uri_format_ok: Optional[bool] = None   # format-only check; URIs are NEVER fetched
+
+    def to_dict(self) -> dict:
+        return {"kind": "announcement", "tx_hash": self.tx_hash,
+                "block_number": self.block_number, "log_index": self.log_index,
+                "description": self.description, "uri": self.uri,
+                "substantive": self.substantive, "reason": self.reason,
+                "uri_format_ok": self.uri_format_ok}
+
+
+@dataclass
 class StateEvidence:
     """A claim backed by an eth_call at a block — re-runnable to verify. ``raw_value``
     carries the read; ``confirmed`` carries a boolean cross-check (e.g. hasRole)."""
@@ -73,7 +95,7 @@ class ScanEvidence:
     """The additive top-level evidence block. ``as_of_block`` anchors every state read."""
     as_of_block: Optional[int] = None
     roles: dict[str, list[RoleHolderEvidence]] = field(default_factory=dict)
-    announcements: list[EventEvidence] = field(default_factory=list)
+    announcements: list["AnnouncementEvidence"] = field(default_factory=list)
     state: dict[str, StateEvidence] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -303,6 +325,11 @@ class ScanInputs:
     verified_entity: Optional[bool] = None
     public_docs: Optional[bool] = None
     announcement_events: Optional[bool] = None
+    # #68: total on-chain announcements + how many are SUBSTANTIVE (>=8 stripped
+    # chars, not an exact duplicate). None = read failed. Substantive lifts the
+    # absence penalty; junk is neutral. Announcements are never a bonus.
+    announcements_total: Optional[int] = None
+    announcements_substantive: Optional[int] = None
 
     # Read provenance — NOT a scoring input. Source-keyed reasons a read could not
     # be completed (e.g. {"roles": "…provider getLogs range cap…"}); the engine maps
@@ -313,5 +340,5 @@ class ScanInputs:
     # assembled into ScanResult.evidence by the engine. Never change a verdict.
     as_of_block: Optional[int] = None
     role_evidence: dict[str, list["RoleHolderEvidence"]] = field(default_factory=dict)
-    announcement_evidence: list["EventEvidence"] = field(default_factory=list)
+    announcement_evidence: list["AnnouncementEvidence"] = field(default_factory=list)
     state_evidence: dict[str, "StateEvidence"] = field(default_factory=dict)
