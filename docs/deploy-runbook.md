@@ -267,3 +267,31 @@ is too aggressive for CDP. The reader changes (fallback + honest diagnostic +
 per-chunk retry) are necessary but NOT sufficient without a chunk size the provider
 can actually serve. (A future code option: adaptive halving on a chunk timeout so
 the size auto-adapts — deliberately not done here per the existing no-halving design.)
+
+## scanner 0.9.0 — effectively-uncapped supply + verified-stock context (#67 + #55)
+
+**Scoring semantics change (contract change → minor bump).**
+
+1. **Effectively-uncapped detection** — the uncapped-mint critical now fires on
+   `supply_cap >= EFFECTIVELY_UNCAPPED_MIN` (`UINT128_MAX // 2`, tunable via
+   `EFFECTIVELY_UNCAPPED_FRACTION`), not just the exact `UINT128_MAX` sentinel. This
+   closes the T1 evasion (cap = `max-1` ≈ 3.4e38 previously scored A/100). Data:
+   all 10 official stocks sit at the exact sentinel; every real fixed-cap token is
+   ~1e27 (11 oom below), so half-of-max cleanly separates them, decimals-agnostic.
+
+2. **Verified-stock context** — severity is gated on `official_ticker_status`:
+   - **unverified + effectively-uncapped** → `CRITICAL_UNCAPPED_MINT` (grade F cap)
+     + `supply_integrity` High "uncapped supply … effectively infinite mint" (−60),
+     as before (now catching the near-sentinel range too).
+   - **verified + effectively-uncapped** → **no critical, no penalty**;
+     `supply_integrity` emits an **INFO** finding "uncapped supply — expected for a
+     verified 1:1-backed tokenized stock (supply floats with custody)". Honesty: the
+     fact is surfaced + contextualized, never hidden. `issuer_powers.can_mint_unbounded`
+     stays `true` (the fact is ungated).
+
+**Migration note.** All 10 official Coinbase tokenized stocks are uncapped by design;
+pre-0.9.0 they took the uncapped-mint critical (a false-positive on legit design).
+From 0.9.0 a verified stock is no longer penalized for uncapped supply — its score
+rises (raw_score up; a stock with a single-EOA admin still hits that critical, so its
+grade may stay F for the honest reason). Any archived score for a verified stock
+pre-0.9.0 understated it; re-scan. Distinguish by `scanner_version`.

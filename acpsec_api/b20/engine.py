@@ -9,12 +9,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from . import __version__
-from .constants import CRITICAL_CAP, GRADE_BANDS, UINT128_MAX, UNRATED_MULTIPLIER
+from .constants import (
+    CRITICAL_CAP,
+    EFFECTIVELY_UNCAPPED_MIN,
+    GRADE_BANDS,
+    UNRATED_MULTIPLIER,
+)
 from .dimensions import DIMENSION_RUNNERS
 from .models import DimensionResult, IssuerPowers, ScanEvidence, ScanInputs, ScanResult
 
 # Stable critical-reason identifiers (prefix : human-readable detail).
-CRITICAL_UNCAPPED_MINT = "uncapped_mint: supply cap equals type(uint128).max (infinite mint)"
+CRITICAL_UNCAPPED_MINT = "uncapped_mint: supply cap in the top half of the uint128 range (effectively infinite mint)"
 CRITICAL_SINGLE_EOA_ADMIN = "single_eoa_admin: DEFAULT_ADMIN_ROLE held by a single EOA without multisig"
 CRITICAL_IMPERSONATION = "impersonation: symbol() claims an official tokenized-stock ticker at a non-official address"
 
@@ -41,8 +46,16 @@ def detect_critical(inputs: ScanInputs) -> list[str]:
     """
     reasons: list[str] = []
 
-    # (a) Infinite/uncapped mint — supply cap equals the no-cap sentinel.
-    if inputs.supply_cap is not None and inputs.supply_cap == UINT128_MAX:
+    # (a) Effectively-uncapped mint — cap in the top half of the uint128 range
+    # (sentinel, max-1 [the T1 evasion], any near-sentinel value). CRITICAL only for
+    # a NON-verified issuer; for a VERIFIED official tokenized stock uncapped supply
+    # is expected 1:1-backed design (surfaced as INFO in supply_integrity, not a
+    # critical). #67 + #55.
+    if (
+        inputs.supply_cap is not None
+        and inputs.supply_cap >= EFFECTIVELY_UNCAPPED_MIN
+        and inputs.official_ticker_status != "verified"
+    ):
         reasons.append(CRITICAL_UNCAPPED_MINT)
 
     # (b) Single-EOA admin without multisig. (A non-official factory is refused
@@ -125,8 +138,10 @@ def read_diagnostics_for(inputs: ScanInputs, unrated: list[str]) -> dict[str, st
 
 
 def _issuer_powers(inp: ScanInputs) -> IssuerPowers:
+    # The FACT (effectively uncapped), ungated by verification — a verified stock
+    # CAN mint unbounded (1:1-backed); scoring contextualizes it, the fact stands.
     can_mint_unbounded = (
-        None if inp.supply_cap is None else inp.supply_cap == UINT128_MAX
+        None if inp.supply_cap is None else inp.supply_cap >= EFFECTIVELY_UNCAPPED_MIN
     )
     return IssuerPowers(
         can_freeze=inp.can_freeze,

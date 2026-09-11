@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from .constants import DIMENSION_WEIGHTS, OFFICIAL_TOKENIZED_STOCKS, UINT128_MAX
+from .constants import DIMENSION_WEIGHTS, EFFECTIVELY_UNCAPPED_MIN, OFFICIAL_TOKENIZED_STOCKS
 from .models import DimensionResult, Finding, ScanInputs
 
 _CURRENCY_CODE_RE = re.compile(r"[A-Z]+")
@@ -82,11 +82,26 @@ def run_supply_integrity(inp: ScanInputs) -> DimensionResult:
     # None for stablecoins (no rebasing multiplier), so it must NOT gate rating.
     rated = inp.supply_cap is not None
 
-    if inp.supply_cap is not None and inp.supply_cap == UINT128_MAX:
-        # High band: uncapped supply lets the issuer dilute holders without limit
-        # (also trips the uncapped-mint critical condition, which caps composite)
-        penalty += 60
-        findings.append(Finding("High", "uncapped supply: cap equals type(uint128).max (infinite mint)"))
+    # Effectively uncapped: cap in the top half of the uint128 range (#67). Severity
+    # is gated on verification (#55): for a VERIFIED 1:1-backed tokenized stock,
+    # uncapped supply is EXPECTED design -> surface it as INFO with context, no
+    # penalty (honesty: report the fact, don't hide, don't penalize). For any other
+    # issuer it is an unbounded-dilution risk -> High + penalty (and the engine's
+    # uncapped-mint critical caps the composite).
+    if inp.supply_cap is not None and inp.supply_cap >= EFFECTIVELY_UNCAPPED_MIN:
+        if inp.official_ticker_status == "verified":
+            findings.append(Finding(
+                "Info",
+                "uncapped supply — expected for a verified 1:1-backed tokenized stock "
+                "(supply floats with custody)",
+            ))
+        else:
+            penalty += 60
+            findings.append(Finding(
+                "High",
+                "uncapped supply: cap in the top half of the uint128 range "
+                "(effectively infinite mint)",
+            ))
 
     if inp.multiplier_active is True:
         # Medium band: a rebasing multiplier can silently change holder balances
