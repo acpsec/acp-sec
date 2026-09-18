@@ -288,6 +288,14 @@ class ScanInputs:
     admin_is_multisig: Optional[bool] = None
     admin_roles_revoked: Optional[bool] = None
     mint_role_holders: Optional[list[str]] = None
+    # #69: the subset of mint_role_holders classified (via eth_getCode) as
+    # non-multisig EOAs — bare keys that can dilute supply to the cap. Tri-state:
+    #   None  = not classified (mint holders unreadable, or getCode failed for all)
+    #   []    = mint holders readable and ALL are contracts (no bare EOA key)
+    #   [..]  = these mint holders are bare EOAs
+    # Honest, same caveat as admin_is_multisig: a contract CAN be a single-key
+    # proxy, so "not a bare EOA" is never "safe". Used by issuer_authority only.
+    mint_holders_eoa: Optional[list[str]] = None
     burn_role_holders: Optional[list[str]] = None
     pause_role_holders: Optional[list[str]] = None
     pause_holder_is_multisig: Optional[bool] = None

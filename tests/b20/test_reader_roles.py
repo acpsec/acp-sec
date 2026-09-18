@@ -166,6 +166,24 @@ def test_classify_multisig_eoa_vs_contract():
     assert R._classify_multisig(f, []) is None
 
 
+# #69: per-holder mint EOA classification (the subset that are bare keys).
+def test_classify_mint_eoa_subset():
+    f = FakeRpc(84532)
+    f.set_code(A1, "0x")           # EOA
+    f.set_code(A2, "0x60016002")   # contract
+    assert R._classify_mint_eoa(f, [A1]) == [A1]        # bare EOA surfaced
+    assert R._classify_mint_eoa(f, [A2]) == []          # all contracts -> readable, no EOA
+    assert R._classify_mint_eoa(f, [A1, A2]) == [A1]    # only the EOA
+    assert R._classify_mint_eoa(f, None) is None        # unread
+    assert R._classify_mint_eoa(f, []) is None          # nothing to classify
+
+
+def test_classify_mint_eoa_none_when_all_unreadable():
+    f = FakeRpc(84532)             # no code programmed -> eth_get_code returns None
+    # non-empty holders but nothing classifiable -> None (never falsely "all contracts")
+    assert R._classify_mint_eoa(f, [A1]) is None
+
+
 # ── B20_GETLOGS_CHUNK_<chain_id>: fallback chunk-size env override ────────────
 # The full-first→chunk fallback (PR #32) walked at the hardcoded public-endpoint
 # size. A provider that allows wider ranges than the public cap (e.g. CDP: 100k)

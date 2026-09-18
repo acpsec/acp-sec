@@ -65,6 +65,51 @@ def run_issuer_authority(inp: ScanInputs) -> DimensionResult:
         penalty += 25
         findings.append(Finding("High", "pause power held by a non-multisig EOA"))
 
+    # #69 mint-authority distribution. Mint is an authority question — a MINT_ROLE
+    # holder can dilute holders up to the cap — so it composes here with the admin
+    # governance ladder. The signal is EOA-ness + admin∩mint overlap, NOT count
+    # (all 10 legit tokenized stocks = a single SEPARATED CONTRACT mint holder, so
+    # count does not discriminate). Contributes only when mint holders are readable;
+    # a silent zero-event token (mint_role_holders None or []) emits nothing and does
+    # NOT newly unrate the dimension (#70 doctrine: silent != unread). Classification
+    # is honest — mint_holders_eoa is eth_getCode-derived; findings say "non-multisig
+    # EOA" / "not a bare EOA", never "safe" (a contract can be a single-key proxy).
+    mint = inp.mint_role_holders
+    if mint:
+        eoa = inp.mint_holders_eoa                       # None=unclassified; []=all contracts
+        eoa_set = {a.lower() for a in (eoa or [])}
+        overlap = {m.lower() for m in mint} & {a.lower() for a in (inp.admin_holders or [])}
+
+        if eoa_set:
+            # High band: a bare (non-multisig EOA) mint key can unilaterally dilute
+            # supply up to the cap. Verified status does NOT excuse a naked key.
+            penalty += 25
+            findings.append(Finding(
+                "High", "mint role held by a non-multisig EOA (a bare key can dilute supply to the cap)"))
+            if len(eoa_set) >= 2:
+                # Medium band: multiple bare mint keys = larger key-compromise surface
+                penalty += 10
+                findings.append(Finding("Medium", "multiple mint keys held by non-multisig EOAs"))
+
+        if overlap:
+            # No separation of duties: one address holds mint AND admin. Worse when
+            # that shared address is itself a bare EOA (a single naked key rules both).
+            if overlap & eoa_set:
+                penalty += 25
+                findings.append(Finding(
+                    "Medium", "a single EOA holds both mint and admin roles (no separation of duties)"))
+            else:
+                penalty += 15
+                findings.append(Finding(
+                    "Medium", "the same address holds both mint and admin roles (no separation of duties)"))
+        elif inp.official_ticker_status == "verified" and eoa is not None and not eoa_set:
+            # #55 verified gate: a separated CONTRACT mint on a verified 1:1-backed
+            # tokenized stock is EXPECTED design -> Info, no penalty. "not a bare EOA"
+            # is honest (a contract can still be a single-key proxy), never "safe".
+            findings.append(Finding(
+                "Info", "mint controlled by a separated contract key — expected for a "
+                        "verified tokenized stock (not a bare EOA)"))
+
     return _result(name, penalty, rated, findings)
 
 
