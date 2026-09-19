@@ -52,7 +52,14 @@ def _persist_leaderboard_and_report(
     Shared verbatim by /scan and /bulk. Each write is independently guarded —
     a store failure must never break a scan (mirrors the two try blocks in the
     Flask handlers).
+
+    #81: an UNRATED scan (fetch-failed / no-website / social-only) is NOT ranked
+    or archived — a merely-unreachable site must never be persisted as a public
+    verdict. Without this gate, nulling final_score would still store score 0 →
+    tier COMPROMISED (leaderboard_store.py `final_score or 0`). Load-bearing.
     """
+    if data.get("rated") is False:
+        return
     try:
         lb_store.upsert(data)
     except Exception:  # noqa: BLE001 — leaderboard must never break a scan

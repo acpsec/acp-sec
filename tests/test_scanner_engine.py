@@ -144,8 +144,78 @@ def test_analyze_agent_social_media_shortcircuit():
     assert d["limited_scan"] is True
     assert d["no_website"] is True
     assert d["limited_reason"] == "social-media-input"
-    assert d["band"] == "COMPROMISED"
-    assert d["score_pct"] == 1.7
+    # #81: a scan that never assessed the agent must NOT manufacture a verdict.
+    # band is the neutral "UNRATED"; score is null (not COMPROMISED / 1.7).
+    assert d["band"] == "UNRATED"
+    assert d["final_score"] is None
+    assert d["score_pct"] is None
+
+
+# ---------------------------------------------------------------------------
+# #81 — degraded/unrated scans must carry a NEUTRAL verdict, never a
+# COMPROMISED band or a non-null score manufactured from AUTH-01 name credit.
+# Doctrine: B20 #53 (score:null for unrated) + #52 (absence of evidence is not
+# evidence of a problem). Three producers must all obey the same contract.
+# ---------------------------------------------------------------------------
+
+
+def _fetch_failed_data():
+    # network gate: analyze_agent returns _build_fetch_failed_result when the
+    # fetch yields no response. An unresolvable host reaches that gate offline.
+    return scanner.analyze_agent(
+        "https://this-host-does-not-exist.invalid", "AuditProbe", scan_mode="exact"
+    )["data"]
+
+
+def _no_website_data():
+    return scanner.analyze_agent("", "AuditProbe", scan_mode="exact")["data"]
+
+
+def _social_data():
+    return scanner.analyze_agent(
+        "https://x.com/auditprobe", "AuditProbe", scan_mode="exact"
+    )["data"]
+
+
+def test_fetch_failed_is_unrated_neutral():
+    d = _fetch_failed_data()
+    assert d["rated"] is False
+    assert d["band"] == "UNRATED"
+    assert d["final_score"] is None
+    assert d["score_pct"] is None
+    assert d["fetch_failed"] is True
+    # the dead frontend guard (ResultsPanel.tsx:31) is finally wired
+    assert d["fetch_status"] == "failed"
+
+
+def test_no_website_is_unrated_neutral():
+    d = _no_website_data()
+    assert d["rated"] is False
+    assert d["band"] == "UNRATED"
+    assert d["final_score"] is None
+    assert d["score_pct"] is None
+
+
+def test_social_media_is_unrated_neutral_and_sets_rated_false():
+    d = _social_data()
+    # the social/limited path previously omitted `rated` entirely, so the
+    # frontend's rated===false guard missed it — it MUST set rated=False now.
+    assert d["rated"] is False
+    assert d["band"] == "UNRATED"
+    assert d["final_score"] is None
+    assert d["score_pct"] is None
+
+
+def test_auth01_name_credit_never_produces_a_score_in_degraded_paths():
+    # AUTH-01 may still surface the declared name as an observable control-level
+    # fact, but that partial credit must NOT roll up into a top-level score.
+    for d in (_fetch_failed_data(), _no_website_data(), _social_data()):
+        assert d["final_score"] is None, d.get("methodology")
+        assert d["score_pct"] is None, d.get("methodology")
+        by_id = {c["ctrl"]: c for c in d["controls"]}
+        if "AUTH-01" in by_id:
+            # the name fact is honest at the control level (not fabricated)
+            assert by_id["AUTH-01"]["score"] in (0.0, 2.0)
 
 
 # ---------------------------------------------------------------------------
