@@ -321,3 +321,34 @@ lifts the "no disclosure" penalty.
 empty posts — the T3 finding). From 0.10.0 only substantive disclosure counts, and a
 verified stock with no on-chain announcements is Info not Low. Re-scan for accurate
 origin_transparency. Distinguish by `scanner_version`.
+
+## scanner 0.11.0 — mint-role distribution scored (#69)
+
+**New scoring signal.** `mint_role_holders` was read and surfaced in
+`issuer_powers` but scored in NO dimension — a second/unaccountable MINT_ROLE
+holder was invisible. From 0.11.0 mint distribution is scored inside
+**issuer_authority** (mint is an authority question — a MINT_ROLE holder can
+dilute holders up to the cap — so it composes with the admin governance ladder).
+
+- The signal is **EOA-ness + admin∩mint overlap, NOT count** (all 10 legit
+  tokenized stocks have a single *separated CONTRACT* mint holder, so count does
+  not discriminate). New reader field `mint_holders_eoa` classifies each mint
+  holder via `eth_getCode` (tri-state: `None`=unclassified/unreadable, `[]`=all
+  contracts, `[..]`=bare EOA keys).
+- **issuer_authority** additions: a non-multisig **EOA mint key** → **High**
+  (−25, a bare key can dilute to the cap); **≥2** EOA mint keys → **Medium**
+  (−10, larger key surface); a mint holder that **also holds admin** (no
+  separation of duties) → **Medium** (−15, or −25 when the shared address is a
+  bare EOA). `official_ticker_status == "verified"` + a *separated contract*
+  mint → **Info**, no penalty (#55 gate) — but verified does **NOT** excuse a
+  bare-EOA mint key or an admin overlap (still graded).
+- **Honesty (same caveat as `admin_is_multisig`):** classification says
+  "non-multisig EOA" / "not a bare EOA", never "safe" — a contract can be a
+  single-key proxy.
+- **Rated unchanged.** Mint contributes only when mint holders are readable; a
+  silent zero-event token (mint empty from silence) emits no mint finding and is
+  NOT newly unrated (#70 doctrine: silent ≠ unread).
+
+**Migration note.** Re-scan tokens with extra/EOA mint authority — pre-0.11.0
+they scored identically to a single-contract-mint token. Distinguish by
+`scanner_version`.

@@ -554,6 +554,29 @@ def _classify_multisig(rpc, holders: Optional[list[str]]) -> Optional[bool]:
     return None
 
 
+def _classify_mint_eoa(rpc, holders: Optional[list[str]]) -> Optional[list[str]]:
+    """#69: the subset of mint holders that are non-multisig EOAs (bare keys),
+    via eth_getCode. Tri-state, honest about unknowns:
+      None -> nothing to classify (holders None/empty) OR none was classifiable
+              (every eth_getCode read failed) — never falsely reported as "all
+              contracts";
+      []   -> holders readable and ALL are contracts (no bare EOA key);
+      [..] -> these holders are bare EOAs.
+    A holder whose code read fails is skipped (not asserted an EOA)."""
+    if not holders:
+        return None
+    eoa: list[str] = []
+    any_known = False
+    for h in holders:
+        c = _is_contract(rpc, h)
+        if c is None:              # unreadable — don't assert EOA-ness
+            continue
+        any_known = True
+        if c is False:
+            eoa.append(h)
+    return eoa if any_known else None
+
+
 # --------------------------------------------------------------------------
 # Supply integrity
 # --------------------------------------------------------------------------
@@ -895,6 +918,9 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         # on read fail.
         admin_roles_revoked=admin_roles_revoked,
         mint_role_holders=roles["mint"],
+        # #69: classify each mint holder EOA-vs-contract (eth_getCode) so
+        # issuer_authority can flag a bare-EOA mint key / admin∩mint overlap.
+        mint_holders_eoa=_classify_mint_eoa(rpc, roles["mint"]),
         burn_role_holders=roles["burn"],
         pause_role_holders=pause,
         pause_holder_is_multisig=_classify_multisig(rpc, pause),

@@ -70,6 +70,23 @@ def test_read_token_full_populates_scaninputs():
     assert inp.memo_required is None         # dropped in the rework
 
 
+def test_read_token_classifies_mint_holder_eoa():
+    # #69: read_token classifies each mint holder via eth_getCode. The good-asset
+    # mint holder has no code -> a bare EOA -> surfaced in mint_holders_eoa.
+    f = _good_asset()
+    f.set_code(MINT_H, "0x")                 # bare EOA mint key
+    inp = R.read_token(ASSET, 84532, rpc=f)
+    assert inp.mint_role_holders == [MINT_H]
+    assert inp.mint_holders_eoa == [MINT_H]
+
+
+def test_read_token_mint_holder_contract_is_not_eoa():
+    f = _good_asset()
+    f.set_code(MINT_H, "0x6080604052")       # contract mint key
+    inp = R.read_token(ASSET, 84532, rpc=f)
+    assert inp.mint_holders_eoa == []        # readable, no bare EOA
+
+
 def test_read_token_passes_creation_block_to_role_scan(monkeypatch):
     # read_token looks up the token's creation block and threads it into the
     # role-holder scan as from_block (bounding the getLogs range).
