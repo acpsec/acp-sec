@@ -1898,16 +1898,12 @@ def _build_no_website_result(agent_name: str) -> dict[str, Any]:
                 ]
                 break
 
-    raw_total  = sum(c["score"] for c in controls)
-    total_max  = sum(c["max"]   for c in controls)
-    score_pct  = round(raw_total / total_max * 100, 1) if total_max else 0.0
-
-    if   score_pct >= 90: band, verdict = "EXEMPLARY",   "Best-in-class"
-    elif score_pct >= 70: band, verdict = "SECURE",      "Production-ready"
-    elif score_pct >= 50: band, verdict = "HARDENED",    "Minor gaps"
-    elif score_pct >= 30: band, verdict = "VULNERABLE",  "Known weaknesses"
-    elif score_pct >= 10: band, verdict = "CRITICAL",    "Multiple high-severity issues"
-    else:                  band, verdict = "COMPROMISED", "Fundamental security failures"
+    # #81: a scan that never assessed the site must not manufacture a verdict.
+    # AUTH-01's name credit stays an observable control-level fact but does NOT
+    # roll up into a score — band is the neutral "UNRATED", score is null.
+    # (Doctrine: B20 #53 score:null for unrated; #52 absence of evidence is not
+    # evidence of a problem.)
+    band = "UNRATED"
     verdict = (
         "Partial scan — no website URL provided. "
         "Technical dimensions are unrated. Provide a website for a full 38-check scan."
@@ -1921,8 +1917,8 @@ def _build_no_website_result(agent_name: str) -> dict[str, Any]:
             "agent_version":    "",
             "band":             band,
             "verdict":          verdict,
-            "final_score":      score_pct,
-            "score_pct":        score_pct,
+            "final_score":      None,   # #81: unrated → null score, never a verdict
+            "score_pct":        None,
             "timestamp":        scan_ts,
             "controls":         controls,
             "source":           "scanner",
@@ -2043,17 +2039,10 @@ def _build_fetch_failed_result(
                 ]
                 break
 
-    raw_total = sum(c["score"] for c in controls)
-    total_max = sum(c["max"]   for c in controls)
-    score_pct = round(raw_total / total_max * 100, 1) if total_max else 0.0
-    final_score = score_pct
-
-    if   score_pct >= 90: band, verdict = "EXEMPLARY",   "Best-in-class"
-    elif score_pct >= 70: band, verdict = "SECURE",      "Production-ready"
-    elif score_pct >= 50: band, verdict = "HARDENED",    "Minor gaps"
-    elif score_pct >= 30: band, verdict = "VULNERABLE",  "Known weaknesses"
-    elif score_pct >= 10: band, verdict = "CRITICAL",    "Multiple high-severity issues"
-    else:                 band, verdict = "COMPROMISED",  "Fundamental security failures"
+    # #81: fetch failed → the site was never assessed. Do NOT manufacture a
+    # COMPROMISED verdict from AUTH-01's name credit. band is neutral "UNRATED",
+    # score is null. (B20 #53 / #52 doctrine.)
+    band = "UNRATED"
 
     scan_ts = datetime.now(timezone.utc).isoformat()
     _cov, _found, _low = _compute_coverage(controls)
@@ -2064,8 +2053,11 @@ def _build_fetch_failed_result(
             "agent_version":        "",
             "band":                 band,
             "verdict":              f"Fetch failed — {reason}. Technical controls are unrated.",
-            "final_score":          final_score,
-            "score_pct":            score_pct,
+            "final_score":          None,   # #81: unrated → null score
+            "score_pct":            None,
+            # #81: wire the consumer guard (ResultsPanel.tsx `fetch_status==='failed'`)
+            # that was dead because the backend never emitted this field.
+            "fetch_status":         "failed",
             "timestamp":            scan_ts,
             "controls":             controls,
             "source":               "scanner",
@@ -2187,20 +2179,12 @@ def _build_limited_scan_result(
                 ]
                 break
 
-    raw_total   = sum(c["score"] for c in controls)
-    capped      = min(raw_total, LIMITED_SCAN_CAP)
-    total_max   = sum(c["max"]   for c in controls)
-    score_pct   = round(capped / total_max * 100, 1) if total_max else 0.0
-
-    # Band table mirrors acpsec.scorer.SCORE_BANDS — we hand-roll it here
-    # to avoid an import cycle / extra dep at module top.
-    if   score_pct >= 90: band, verdict = "EXEMPLARY",   "Best-in-class — sets the bar for the industry"
-    elif score_pct >= 70: band, verdict = "SECURE",      "Production-ready with active monitoring"
-    elif score_pct >= 50: band, verdict = "HARDENED",    "Minor gaps present, low overall risk"
-    elif score_pct >= 30: band, verdict = "VULNERABLE",  "Known exploitable weaknesses"
-    elif score_pct >= 10: band, verdict = "CRITICAL",    "Multiple high-severity issues — do not deploy"
-    else:                  band, verdict = "COMPROMISED", "Fundamental security failures"
-    # Replace the verdict with the limited-scan call-to-action.
+    # #81: a limited scan never assessed a dedicated site (social-media-only
+    # input), so it must not manufacture a verdict from AUTH-01's name credit.
+    # band is neutral "UNRATED", score is null, and rated=False — this path
+    # previously omitted `rated` entirely, which is why the frontend's
+    # rated===false guard missed it and rendered COMPROMISED. (B20 #53 / #52.)
+    band = "UNRATED"
     verdict = (
         "Scan limited — no website found. "
         "Provide the agent's website URL for a full 38-check scan."
@@ -2215,8 +2199,8 @@ def _build_limited_scan_result(
             "agent_version":    "",
             "band":             band,
             "verdict":          verdict,
-            "final_score":      score_pct,
-            "score_pct":        score_pct,
+            "final_score":      None,   # #81: unrated → null score
+            "score_pct":        None,
             "timestamp":        scan_ts,
             "controls":         controls,
             "source":           "scanner",
@@ -2234,6 +2218,9 @@ def _build_limited_scan_result(
             "scan_mode":        "limited",
             "scan_duration_ms": 0,
             "is_self_probe":    False,
+            # #81: carry rated=False so the frontend's rated===false guard (and the
+            # persistence gate) catch this path — previously it was omitted here.
+            "rated":            False,
             # Flags consumed by scanner.html — surface the warning UI.
             "limited_scan":     True,
             "no_website":       True,

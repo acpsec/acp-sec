@@ -94,6 +94,13 @@ class LeaderboardStore:
         scanner engine. Movement is derived later (GET /api/leaderboard) from
         the ``previous_score`` stashed here.
         """
+        # #81 defense-in-depth: never rank an UNRATED scan (fetch-failed /
+        # no-website / social-only). The router already gates on this, but the
+        # store must refuse it too so a future caller can't reintroduce the
+        # false-danger by upserting an unrated payload directly.
+        if scan.get("rated") is False:
+            return
+
         name = (scan.get("agent_name") or "").strip()
         if not name:
             return

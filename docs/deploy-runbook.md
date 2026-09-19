@@ -352,3 +352,58 @@ dilute holders up to the cap — so it composes with the admin governance ladder
 **Migration note.** Re-scan tokens with extra/EOA mint authority — pre-0.11.0
 they scored identically to a single-contract-mint token. Distinguish by
 `scanner_version`.
+
+## 0.12.0 — agent scanner: degraded scans return a NEUTRAL verdict (#81)
+
+**Contract change (agent scanner, not B20).** When the agent scanner could not
+actually assess a site, it previously still returned `band="COMPROMISED"` and a
+non-null `final_score` (≈1.7, manufactured from AUTH-01's name-only partial
+credit) behind the `rated=False` flag. A consumer reading `band`/`final_score`
+directly saw a **false-danger** — a merely-unreachable or website-less agent
+labelled COMPROMISED. Same class as the B20 fetch-failure false-CRITICAL (#52),
+same fix doctrine as B20 **#53** (`score:null` for unrated) / **#52** (absence of
+evidence is not evidence of a problem).
+
+From 0.12.0, all **three** degraded producers in `acpsec_api/scanner.py` —
+`_build_fetch_failed_result`, `_build_no_website_result`,
+`_build_limited_scan_result` — return:
+
+- `band = "UNRATED"` (a string, not `COMPROMISED`),
+- `final_score = null`, `score_pct = null` (AUTH-01 name credit stays an
+  observable *control-level* fact but never rolls up into a score),
+- `rated = false` on **all three** — the social/limited path previously omitted
+  `rated` entirely, which is why the frontend's `rated === false` guard missed it,
+- `fetch_status = "failed"` on the fetch-failed path — wiring the previously
+  **dead** frontend guard (`ResultsPanel.tsx` `fetch_status === "failed"`).
+
+**Persistence gate (load-bearing).** `routers/scanner.py` now skips
+`_persist_leaderboard_and_report` when `data.get("rated") is False`, and
+`LeaderboardStore.upsert` refuses an unrated payload directly (defense in depth).
+Without this, nulling `final_score` would still persist `score 0` →
+`tier COMPROMISED` (`leaderboard_store.py`: `final_score or 0`). **Consequence:**
+unrated scans (fetch-failed / no-website / social-only) are **no longer ranked**.
+
+**Data migration (shipped in this change).** 19 pre-existing social-only rows in
+`data/leaderboard.json` were **dropped**. **Why:** each was a bulk X-username scan
+(URL templated `https://twitter.com/{username}` → social-media guard → limited
+scan), never a real site, and carried `band=COMPROMISED` / score 2–3 manufactured
+**purely from AUTH-01's name-only partial credit** (2.0 pts / ~116 max) on a site
+that was never assessed — a false-danger (a social-only agent is UNRATED, not
+compromised). The 0.12.0 persistence gate prevents this class from being ranked
+again. The 6 genuine (`limited_scan=False`) rows are kept, including honest low
+scores (bankrbot/virtuals_io at 10).
+
+**Auditable + reversible.** The 19 removed rows are preserved verbatim (with
+provenance and rationale) in
+[`docs/leaderboard-removed-2026-09-19.json`](leaderboard-removed-2026-09-19.json)
+— restore any row into `data/leaderboard.json` if it later proves to be a
+legitimate rated entry. A social-only "limited leaderboard" should be a
+**deliberate product feature designed for that population**, not relabelled
+bulk-scan residue.
+
+**Consumer contract.** Anything reading `band`/`final_score` directly MUST treat
+`band="UNRATED"` / `final_score=null` as "not assessed", not as a verdict. The
+scanner frontend (`ResultsPanel.tsx`) already tolerates this shape. **Known
+follow-up (separate issue):** the Dashboard handoff (`DashboardView.tsx`,
+`ScoreSummary.tsx`) lacks the `rated===false` gate and will render `null/100` for
+an unrated hand-off — tracked separately, not fixed here.

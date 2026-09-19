@@ -71,6 +71,27 @@ def _partial_result() -> dict:
     }
 
 
+def _unrated_result() -> dict:
+    """Canned degraded/unrated result (#81 fixed shape) — must NOT be persisted."""
+    return {
+        "ok": True,
+        "data": {
+            "agent_name": "Unreachable Agent",
+            "band": "UNRATED",
+            "final_score": None,
+            "score_pct": None,
+            "rated": False,
+            "fetch_failed": True,
+            "fetch_status": "failed",
+            "no_website": True,
+            "limited_reason": "fetch-failed",
+            "methodology": "fetch-failed",
+            "controls": [],
+            "token": {},
+        },
+    }
+
+
 _VALID_BODY = {"url": "https://agent.example", "agent_name": "Test Agent"}
 
 
@@ -128,6 +149,30 @@ def test_scan_writes_scan_store(scan_client, monkeypatch) -> None:
     client.post("/api/scanner/scan", json=_VALID_BODY)
     assert scan_store_path.exists()
     assert json.loads(scan_store_path.read_text())["agent_name"] == "Test Agent"
+
+
+# --- #81: unrated scans must NOT be ranked -------------------------------
+
+def test_scan_unrated_result_not_persisted_to_leaderboard(scan_client, monkeypatch) -> None:
+    """An unreachable/unrated scan (rated=False) must never reach the leaderboard —
+    else a merely-unreachable site is publicly ranked COMPROMISED (#81)."""
+    monkeypatch.delenv("SCANNER_TOKEN", raising=False)
+    make, lb_store, reports_dir, _scan = scan_client
+    client = make(_StubEngine(_unrated_result()))
+
+    resp = client.post(
+        "/api/scanner/scan",
+        json={"url": "https://unreachable.invalid", "agent_name": "Unreachable Agent"},
+    )
+    assert resp.status_code == 200          # still an honest 200 partial result
+    assert resp.json()["data"]["band"] == "UNRATED"
+
+    board = lb_store.load()
+    assert not any(a["id"] == "unreachable_agent" for a in board.get("agents", [])), (
+        "an unrated scan must not create a leaderboard row"
+    )
+    # and no report is written for an unrated scan
+    assert not (reports_dir / "unreachable_agent.json").exists()
 
 
 # --- Contract / error paths ----------------------------------------------
