@@ -384,11 +384,22 @@ Without this, nulling `final_score` would still persist `score 0` →
 unrated scans (fetch-failed / no-website / social-only) are **no longer ranked**.
 
 **Data migration (shipped in this change).** 19 pre-existing social-only rows in
-`data/leaderboard.json` — all scanned via the bulk X-username path
-(`https://twitter.com/{username}` → limited scan), never a real site — carried
-`COMPROMISED`/score 2–3. They are **dropped**. The 6 genuine (`limited_scan=False`)
-rows are kept, including honest low scores (bankrbot/virtuals_io at 10). Future
-social-only scans simply don't populate the board.
+`data/leaderboard.json` were **dropped**. **Why:** each was a bulk X-username scan
+(URL templated `https://twitter.com/{username}` → social-media guard → limited
+scan), never a real site, and carried `band=COMPROMISED` / score 2–3 manufactured
+**purely from AUTH-01's name-only partial credit** (2.0 pts / ~116 max) on a site
+that was never assessed — a false-danger (a social-only agent is UNRATED, not
+compromised). The 0.12.0 persistence gate prevents this class from being ranked
+again. The 6 genuine (`limited_scan=False`) rows are kept, including honest low
+scores (bankrbot/virtuals_io at 10).
+
+**Auditable + reversible.** The 19 removed rows are preserved verbatim (with
+provenance and rationale) in
+[`docs/leaderboard-removed-2026-09-19.json`](leaderboard-removed-2026-09-19.json)
+— restore any row into `data/leaderboard.json` if it later proves to be a
+legitimate rated entry. A social-only "limited leaderboard" should be a
+**deliberate product feature designed for that population**, not relabelled
+bulk-scan residue.
 
 **Consumer contract.** Anything reading `band`/`final_score` directly MUST treat
 `band="UNRATED"` / `final_score=null` as "not assessed", not as a verdict. The
