@@ -136,6 +136,49 @@ docker history acpsec-ci-verify --no-trunc \
 > required status check in branch protection, so a leak blocks the merge — the
 > local run above is a fast pre-flight, not a substitute.
 
+### ⚠️ `railway run` can execute the INSTALLED package, not your branch
+
+To verify a *branch's* scanner against a real provider (e.g. CDP `getLogs` on
+mainnet, which the public RPC can't do — 413 range cap), you may reach for
+`railway run` to inject the prod service's env into a **local** process. Beware:
+
+```bash
+# WRONG — resolved acpsec 0.10.0 (the DEPLOYED version), not the local branch
+railway run --service api-prod .venv/bin/python scan.py
+```
+
+`railway run`'s injected environment (and a relative `.venv/bin/python`) can
+resolve a **different interpreter / installed package** than your editable
+branch — so `scanner_version` came back `0.10.0` while the branch was `0.11.0`.
+That cost one misleading verification run (#69, 2026-09-19).
+
+**Always do both:**
+
+1. **Absolute** venv interpreter path — never a relative `.venv/bin/python`:
+   ```bash
+   B20_GETLOGS_CHUNK_8453=20000 railway run --service api-prod \
+     /abs/path/to/repo/.venv/bin/python scan.py
+   ```
+2. A **provenance guard** at the top of the script that prints what actually
+   loaded and **aborts before any scan number** on mismatch:
+   ```python
+   import sys
+   from acpsec_api.b20 import __version__ as ver
+   import acpsec_api.b20.dimensions as dim
+   print("sys.executable:", sys.executable)
+   print("dimensions file:", dim.__file__)
+   print("acpsec_api.b20.__version__:", ver)
+   if ver != EXPECTED_VERSION:   # e.g. "0.11.0"
+       sys.exit(3)               # do NOT trust the scan — fix the interpreter first
+   ```
+
+Read `sys.executable` + module `__file__` + `__version__` **first**; only trust
+the scan once they name your branch source. (`railway run` is still the right
+tool for the *env injection* — the fix is pinning the interpreter, not avoiding
+`railway run`.) For post-deploy confirmation, prefer scanning the **real prod
+HTTP endpoint** (`POST /api/b20/scan`), which removes local-interpreter ambiguity
+entirely — the response's `scanner_version` is authoritative.
+
 ## scanner 0.7.0 — B20 capability doctrine shift (#70)
 
 **What changed.** The B20 reader's `capability()` (roles → `can_seize` / `can_pause`
