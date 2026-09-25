@@ -105,6 +105,52 @@ def test_event_topics_are_bytes32():
     assert C.B20_EVENT_B20_CREATED == "0xfd9bf2730513a1709722ff379a0844dfd8f997d600693c2bcc659e188bbdba0d"
 
 
+def test_cobalt_seize_policy_scopes():
+    # base-std v1.1.0 (Cobalt) added two seize policy scopes. keccak256 of the name,
+    # verified against src/lib/B20Constants.sol @ v1.1.0.
+    assert _is_bytes32(C.B20_POLICY_SEIZE_EXEMPT)
+    assert _is_bytes32(C.B20_POLICY_SEIZE_RECEIVER)
+    assert C.B20_POLICY_SEIZE_EXEMPT == (
+        "0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed"
+    )
+    assert C.B20_POLICY_SEIZE_RECEIVER == (
+        "0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d"
+    )
+    # SEIZE_EXEMPT_POLICY is a distinct scope from every transfer scope.
+    assert C.B20_POLICY_SEIZE_EXEMPT not in (
+        C.B20_POLICY_TRANSFER_SENDER, C.B20_POLICY_TRANSFER_RECEIVER,
+        C.B20_POLICY_TRANSFER_EXECUTOR, C.B20_POLICY_MINT_RECEIVER,
+    )
+
+
+def test_cobalt_selectors():
+    # v1.1.0 selectors (keccak256(sig)[:4]). policyExists live-confirmed on the
+    # Sepolia PolicyRegistry precompile 2026-09-25; SEIZE_EXEMPT_POLICY() = base-std#214.
+    assert C.B20_SELECTOR_POLICY_EXISTS == "0x330f5637"          # policyExists(uint64)
+    assert C.B20_SELECTOR_SEIZE_EXEMPT_POLICY == "0xfeb346ec"    # SEIZE_EXEMPT_POLICY()
+    for sel in (C.B20_SELECTOR_POLICY_EXISTS, C.B20_SELECTOR_SEIZE_EXEMPT_POLICY):
+        assert sel.startswith("0x") and len(sel) == 10
+
+
+def test_cobalt_event_topics():
+    # topic0 = keccak256(eventSignature), signatures from base-std v1.1.0 interfaces.
+    for name in ("SEIZED", "MULTIPLIER_UPDATED", "UI_MULTIPLIER_UPDATE_CANCELLED",
+                 "COMPOSITE_POLICY_UPDATED"):
+        assert _is_bytes32(getattr(C, f"B20_EVENT_{name}"))
+    # Seized(address,address,address,uint256)
+    assert C.B20_EVENT_SEIZED == (
+        "0xa9aec5d8b86e2fa2fd6ac3af62f2622e3dfdab1967d4cbbb56a5df7d74cb887c"
+    )
+    # UIMultiplierUpdateCancelled(uint256,uint256)
+    assert C.B20_EVENT_UI_MULTIPLIER_UPDATE_CANCELLED == (
+        "0x883856335ba5f60c18b9817c4505d3c7d3f6223dcf39516b30c508c46a5e1cad"
+    )
+    # CompositePolicyUpdated(uint64,address,uint64[])
+    assert C.B20_EVENT_COMPOSITE_POLICY_UPDATED == (
+        "0x4ff6adaab31b0df87aa7b8b7320c52b8b3b5eede3bf28a6baaaa8b8b7e1d6363"
+    )
+
+
 def test_activation_feature_keys():
     for name in ("ASSET", "STABLECOIN", "POLICY_REGISTRY"):
         assert _is_bytes32(getattr(C, f"B20_FEATURE_{name}"))

@@ -140,13 +140,37 @@ def _decode_string(hexdata: Optional[str]) -> Optional[str]:
         return None
 
 
+# EIP-7702 delegation designator. Post-Cobalt (native AA) an EOA can delegate to a
+# smart-account impl; eth_getCode then returns ``0xef0100 || <20-byte delegate>``
+# (23 bytes) instead of ``0x``. It is STILL one key — the EOA can re-delegate or
+# clear it at will — so it must be classified as an EOA, never a contract/multisig.
+_EIP7702_PREFIX = "ef0100"
+
+
+def _delegation_target(code: Optional[str]) -> Optional[str]:
+    """The delegate address of an EIP-7702 designator (``0xef0100||addr``), else None.
+    Pure — no RPC. None for empty code, plain bytecode, or a malformed designator."""
+    if not code:
+        return None
+    h = code[2:] if code.startswith("0x") else code
+    if h.lower().startswith(_EIP7702_PREFIX) and len(h) == len(_EIP7702_PREFIX) + 40:
+        return "0x" + h[len(_EIP7702_PREFIX):]
+    return None
+
+
 def _is_contract(rpc, addr: str) -> Optional[bool]:
-    """True if the address has code (multisig/contract), False if EOA, None if
-    unreadable. Still valid for admin addresses — they are ordinary accounts,
-    not the B20 token precompile."""
+    """True if the address is a contract, False if an EOA, None if unreadable.
+
+    An EIP-7702 delegated EOA (code ``0xef0100||addr``) is an EOA — a single key —
+    NOT a contract: treating its designator as "has code" was the false-multisig bug
+    (a delegated admin/deploy key read as ``admin_is_multisig=True``, suppressing the
+    single-EOA-admin critical and hiding a bare mint key). Valid for holder addresses
+    — they are ordinary accounts, not the B20 token precompile."""
     code = rpc.eth_get_code(addr)
     if code is None:
         return None
+    if _delegation_target(code) is not None:
+        return False
     return code not in ("0x", "0x0") and len(code) > 2
 
 
@@ -303,17 +327,36 @@ def get_creation_block(rpc, token: str, chain_id: int) -> Optional[int]:
     """Block at which ``token`` was created, used to bound the role/announcement
     scans to [creation, latest] instead of all of chain history.
 
-    We CANNOT find this via the B20Created event: public Base RPC caps eth_getLogs
-    at ~2000 blocks (error -32602), so a full-history factory scan would be ~21K
-    sequential calls. Instead we exploit that B20 tokens carry bytecode and
-    BINARY-SEARCH the first block at which the token has code — O(log height),
-    ~25 eth_getCode calls. Returns None if the token has no code (never deployed)
-    or any RPC call fails; the caller then degrades to a bounded recent window.
+    Two-phase strategy:
+      1. PRIMARY — binary-search the first block at which the token has bytecode
+         (~log2(height) eth_getCode calls). Cheap and exact on an ARCHIVE node.
+      2. FALLBACK — when the binary search dead-ends (a non-archive provider that
+         cannot serve getCode-by-block), read the factory's ``B20Created`` log,
+         filtered by the indexed token, in one getLogs. This keeps aged tokens
+         rateable on non-archive providers instead of collapsing to a recent-window
+         miss (which wrongly UNRATES issuer_authority).
+    Returns None only when BOTH phases fail (token never deployed / reads fail); the
+    caller then degrades to a bounded recent window.
     """
     latest = rpc.eth_block_number()
     if latest is None:
         return None
-    # Must have code now; otherwise it's not a deployed token (or RPC is down).
+    cb = _creation_block_via_getcode(rpc, token, latest)
+    if cb is not None:
+        return cb
+    # Fallback: the factory's B20Created log, filtered by the indexed token address.
+    # The getCode binary search needs an ARCHIVE node (getCode-by-block); a non-archive
+    # provider makes it dead-end, which on an AGED token collapses the role scan to a
+    # recent-window miss (issuer_authority wrongly UNRATED). The B20Created event is
+    # emitted once at creation and indexed by token, so a single filtered getLogs
+    # recovers the exact creation block without archive getCode.
+    return _creation_block_from_factory(rpc, token, chain_id)
+
+
+def _creation_block_via_getcode(rpc, token: str, latest: int) -> Optional[int]:
+    """Binary-search the first block at which ``token`` has code (~log2(height)
+    eth_getCode calls). None if the token has no code now or any read fails —
+    including the non-archive case (getCode-by-block unsupported)."""
     code_now = rpc.eth_get_code(token, "latest")
     if code_now is None or code_now in ("0x", "0x0"):
         return None
@@ -321,13 +364,28 @@ def get_creation_block(rpc, token: str, chain_id: int) -> Optional[int]:
     while lo < hi:  # invariant: token has code at hi, not before lo
         mid = (lo + hi) // 2
         code = rpc.eth_get_code(token, hex(mid))
-        if code is None:  # RPC failure mid-search — abandon, don't guess
+        if code is None:  # RPC failure mid-search (e.g. non-archive) — fall through
             return None
         if code in ("0x", "0x0"):
             lo = mid + 1
         else:
             hi = mid
     return lo
+
+
+def _creation_block_from_factory(rpc, token: str, chain_id: int) -> Optional[int]:
+    """Creation block from the factory's ``B20Created(address indexed token, ...)`` log,
+    filtered by the indexed token. None if the factory is unknown, no matching log
+    exists, or the read fails. Provider-agnostic (getLogs, no archive getCode)."""
+    factory = C.OFFICIAL_FACTORY_ADDRESS.get(chain_id)
+    if factory is None:
+        return None
+    topics = [C.B20_EVENT_B20_CREATED, "0x" + enc_address(token)]
+    logs = _get_logs_full_or_chunked(rpc, factory, topics, chain_id)
+    if not logs:
+        return None
+    blocks = [int(lg["blockNumber"], 16) for lg in logs if lg.get("blockNumber")]
+    return min(blocks) if blocks else None
 
 
 def role_holders_detailed(
@@ -552,6 +610,23 @@ def _classify_multisig(rpc, holders: Optional[list[str]]) -> Optional[bool]:
     if all(f is False for f in flags):
         return False
     return None
+
+
+def _classify_delegated_eoa(rpc, holders: Optional[list[str]]) -> Optional[bool]:
+    """True if ANY holder is an EIP-7702 delegated EOA (honest surfacing: "still one
+    key, but with smart-account delegation"). False if all readable and none
+    delegated; None if holders None/empty or every code read failed."""
+    if not holders:
+        return None
+    any_known = False
+    for h in holders:
+        code = rpc.eth_get_code(h)
+        if code is None:
+            continue
+        any_known = True
+        if _delegation_target(code) is not None:
+            return True
+    return False if any_known else None
 
 
 def _classify_mint_eoa(rpc, holders: Optional[list[str]]) -> Optional[list[str]]:
@@ -912,6 +987,10 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         # issuer authority (role holders via log replay)
         admin_holders=admin,
         admin_is_multisig=_classify_multisig(rpc, admin),
+        # EIP-7702: honest note that a single-key admin carries a delegation (still
+        # one key). Does NOT change the multisig verdict — _is_contract already reads
+        # a delegated EOA as an EOA, so admin_is_multisig stays False.
+        admin_is_delegated_eoa=_classify_delegated_eoa(rpc, admin),
         # [] = revoked ONLY if a grant was ever observed (granted-then-revoked); a
         # never-granted empty replay is None (unknown), so issuer_authority goes
         # UNRATED rather than clean-clearing at 100 on silence (issue #34). None also
@@ -933,6 +1012,12 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         can_freeze=policy["can_freeze"],
         # #37: can_seize is the SEIZE_ROLE power (gates seizeWithMemo), NOT
         # BURN_BLOCKED_ROLE (blocked-burn). Same #34 tri-state as every capability.
+        # ⚠️ can_seize is a ROLE fact ("someone can call seizeWithMemo"), NOT a policy
+        # read. Cobalt's SEIZE_EXEMPT_POLICY (base-std#214) has INVERTED semantics —
+        # authorized = EXEMPT (not seizable), unset = seizure closed — so it must NOT be
+        # folded in with the transfer-policy reading. If per-holder seizability is ever
+        # added, read SEIZE_EXEMPT_POLICY with its own (inverted) evaluator, separate
+        # from can_freeze/preflight. See preflight.py + constants.B20_POLICY_SEIZE_EXEMPT.
         can_seize=capability(roles["seize"], ge["seize"]),
         # #37 follow-up: blocked-burn surfaced as its own capability (read-only,
         # unscored). Same demuxed role + #34 tri-state — no extra RPC.

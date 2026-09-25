@@ -43,3 +43,31 @@ def test_block_number_failure_returns_none():
     f = FakeRpc(84532).set_creation_code(ASSET, 100, "0xef")
     f.block_number = None  # eth_block_number -> None
     assert R.get_creation_block(f, ASSET, 84532) is None
+
+
+# --- factory-log fallback (item c): non-archive providers -----------------
+def test_creation_block_falls_back_to_factory_log_when_getcode_by_block_fails():
+    # Non-archive provider: getCode(latest) works (token has code now) but getCode-by-
+    # block fails, so the binary search dead-ends. The factory's B20Created log
+    # (indexed by token) still yields the creation block -> aged tokens keep rating.
+    f = (FakeRpc(84532).set_block_number(1_000_000)
+         .set_creation_code(ASSET, 500_000, "0xef").set_getcode_fail()
+         .set_creation_event(ASSET, block=500_000))
+    assert R.get_creation_block(f, ASSET, 84532) == 500_000
+
+
+def test_creation_block_fallback_none_when_no_factory_log_either():
+    # Both signals absent: getCode-by-block fails AND no B20Created log -> honest None.
+    f = (FakeRpc(84532).set_block_number(1_000_000)
+         .set_creation_code(ASSET, 500_000, "0xef").set_getcode_fail())
+    assert R.get_creation_block(f, ASSET, 84532) is None
+
+
+def test_factory_fallback_ignores_other_tokens_created_events():
+    # The B20Created filter is by indexed token — another token's creation must not
+    # be mistaken for this one's.
+    other = "0x" + "b2" + "00" * 9 + "00" + "bb" * 9
+    f = (FakeRpc(84532).set_block_number(1_000_000)
+         .set_creation_code(ASSET, 500_000, "0xef").set_getcode_fail()
+         .set_creation_event(other, block=123))
+    assert R.get_creation_block(f, ASSET, 84532) is None
