@@ -143,6 +143,13 @@ B20_SELECTOR_SUPPORTS_INTERFACE = "0x01ffc9a7"  # ERC-165 supportsInterface(byte
 B20_IFACE_ERC8056 = "0xa60bf13d"
 B20_SELECTOR_IS_AUTHORIZED = "0x55a1179e"       # PolicyRegistry.isAuthorized(uint64,address) -> bool
 B20_SELECTOR_BALANCE_OF = "0x70a08231"          # balanceOf(address) -> uint256
+# PolicyRegistry.policyExists(uint64) -> bool (Cobalt v1.1.0). isAuthorized returns
+# TRUE for a NONEXISTENT policy id (live-confirmed on Sepolia 2026-09-25:
+# isAuthorized(2**40, token)=true), so a caller MUST gate on policyExists before
+# trusting isAuthorized — else a token pointing a scope at a deleted/never-created
+# policy yields a false ALLOW. See preflight.py (#41).
+B20_SELECTOR_POLICY_EXISTS = "0x330f5637"
+B20_SELECTOR_SEIZE_EXEMPT_POLICY = "0xfeb346ec"  # SEIZE_EXEMPT_POLICY() getter (base-std#214)
 
 # --- Asset-variant selectors (IB20Asset) ----------------------------------
 B20_SELECTOR_MULTIPLIER = "0x1b3ed722"        # multiplier() -> uint256 (WAD=1e18; != 1e18 => rebasing active)
@@ -182,12 +189,32 @@ B20_POLICY_TRANSFER_SENDER = "0xb81736c875ab819dd97f59f2a6542cfb731ad52b4ae15a6f
 B20_POLICY_TRANSFER_RECEIVER = "0x8a4b3fa2d8b921852bc0089c6ef0958aa6961897be36fd731330fe2cd23f8363"
 B20_POLICY_TRANSFER_EXECUTOR = "0x10be5173aff2a44e748bd9acd8b19fe34689581398a9db7ba2fb671e786ff7d8"
 B20_POLICY_MINT_RECEIVER = "0xa0d5ae037e66a09119acf080a1d807abb9b6d03b6b9130eb19f7c1e6bdb8ffc8"
+# Cobalt (base-std v1.1.0) seize policy scopes. keccak256 of the name, verified
+# against src/lib/B20Constants.sol @ v1.1.0 (base-std#214 renamed SEIZE_HOLDER ->
+# SEIZE_EXEMPT). ⚠️ INVERTED SEMANTICS vs the transfer scopes: an account
+# AUTHORIZED under SEIZE_EXEMPT_POLICY is EXEMPT from seizure (NOT seizable); an
+# unset (policyId 0 / always-allow) scope means everyone is exempt ⇒ seizure stays
+# CLOSED. Do NOT reuse the transfer-policy reading (there authorized ⇒ may-transfer)
+# — see preflight.py and reader.can_seize. Not yet consumed by the scanner.
+B20_POLICY_SEIZE_EXEMPT = "0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed"
+B20_POLICY_SEIZE_RECEIVER = "0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d"
 
 # --- Event topics (topic0 = keccak256 of the event signature) -------------
 B20_EVENT_ROLE_GRANTED = "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d"
 B20_EVENT_ROLE_REVOKED = "0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b"
 B20_EVENT_ANNOUNCEMENT = "0xccebf8218a62875909564adef86a6f4df81503cb617221e793357d62f8e813f7"  # Asset
 B20_EVENT_B20_CREATED = "0xfd9bf2730513a1709722ff379a0844dfd8f997d600693c2bcc659e188bbdba0d"   # Factory
+# Cobalt (base-std v1.1.0) events. topic0 = keccak256(signature), signatures from
+# the v1.1.0 interfaces (IB20.sol / IB20Asset.sol / IPolicyRegistry.sol). Not yet
+# consumed by the scanner; landed so future readers use authoritative topic0s.
+B20_EVENT_SEIZED = "0xa9aec5d8b86e2fa2fd6ac3af62f2622e3dfdab1967d4cbbb56a5df7d74cb887c"        # Seized(address,address,address,uint256)
+B20_EVENT_MULTIPLIER_UPDATED = "0x4dbe4840d7465bd162f67814cea0b519567a2e0e578bcde61e7f4ced361e5a3d"  # MultiplierUpdated(uint256)
+B20_EVENT_UI_MULTIPLIER_UPDATE_CANCELLED = "0x883856335ba5f60c18b9817c4505d3c7d3f6223dcf39516b30c508c46a5e1cad"  # UIMultiplierUpdateCancelled(uint256,uint256)
+B20_EVENT_COMPOSITE_POLICY_UPDATED = "0x4ff6adaab31b0df87aa7b8b7320c52b8b3b5eede3bf28a6baaaa8b8b7e1d6363"  # CompositePolicyUpdated(uint64,address,uint64[])
+# NOTE: UIMultiplierUpdated (emitted by updateUIMultiplier) is declared only in the
+# node/precompile implementation, NOT in the base-std v1.1.0 interfaces — its
+# authoritative signature is not available here, so no topic0 is landed (never ship
+# a guessed topic0). Needed only for the scheduled-multiplier read (deferred).
 
 # --- Activation feature keys (keccak256 of the feature name string) -------
 B20_FEATURE_ASSET = "0xcdcc772fe4cbdb1029f822861176d09e646db96723d4c1e82ddfdeb8163ef54c"

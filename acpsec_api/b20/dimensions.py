@@ -58,6 +58,13 @@ def run_issuer_authority(inp: ScanInputs) -> DimensionResult:
         # High band: single-EOA admin is the worst non-critical authority state
         penalty += 55
         findings.append(Finding("High", "admin role controlled by a non-multisig EOA"))
+        if inp.admin_is_delegated_eoa is True:
+            # EIP-7702: the admin EOA has delegated to a smart-account impl. Honest
+            # framing — a delegation is set and cleared by the key itself, so it is
+            # STILL one key; it neither adds nor removes multisig protection.
+            findings.append(Finding(
+                "Info", "admin EOA carries an EIP-7702 smart-account delegation — still "
+                        "a single key (the delegation is key-controlled and revocable)"))
 
     # Pause power held by a non-multisig EOA — explicit high-penalty item.
     if inp.pause_role_holders and inp.pause_holder_is_multisig is False:
