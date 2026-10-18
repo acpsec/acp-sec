@@ -299,6 +299,10 @@ class ScanInputs:
     burn_role_holders: Optional[list[str]] = None
     pause_role_holders: Optional[list[str]] = None
     pause_holder_is_multisig: Optional[bool] = None
+    # EIP-7702: True if an admin holder is a delegated EOA (single key with a
+    # smart-account delegation). Surfaced by issuer_authority alongside the
+    # single-EOA-admin finding so the report says "still one key", honestly.
+    admin_is_delegated_eoa: Optional[bool] = None
 
     # Supply integrity
     supply_cap: Optional[int] = None

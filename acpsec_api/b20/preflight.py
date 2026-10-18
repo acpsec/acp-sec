@@ -59,6 +59,16 @@ def _is_authorized(rpc, policy_id: int, account: str) -> Optional[bool]:
     )
 
 
+def _policy_exists(rpc, policy_id: int) -> Optional[bool]:
+    # Called on the PolicyRegistry precompile. isAuthorized returns TRUE for a
+    # NONEXISTENT policy id (live-confirmed on Sepolia 2026-09-25), so a caller MUST
+    # confirm the policy exists before trusting isAuthorized — else a scope pointing at
+    # a deleted/never-created policy yields a false allow (#41).
+    return _decode_bool(
+        rpc.eth_call(C.POLICY_REGISTRY, calldata(C.B20_SELECTOR_POLICY_EXISTS, enc_uint(policy_id)))
+    )
+
+
 def _balance_of(rpc, token: str, account: str) -> Optional[int]:
     return _decode_uint(rpc.eth_call(token, calldata(C.B20_SELECTOR_BALANCE_OF, enc_address(account))))
 
@@ -126,6 +136,14 @@ def preflight(
     # 3+4) Sender then receiver policy. policyId 0 = always-allow (no registry call).
     #      Gate-passed != policy-surface-live: a revert here is read_failed, not allow.
     #      deny_class=policy (structural — a blocklist/allowlist decision).
+    #
+    #      ⚠️ TRANSFER scopes ONLY. Do NOT add a SEIZE scope to this loop. Seizability
+    #      is governed by SEIZE_EXEMPT_POLICY, whose semantics are INVERTED vs transfer:
+    #      an account AUTHORIZED there is EXEMPT from seizure (NOT seizable), and an
+    #      unset scope keeps seizure CLOSED. The reading below (authorized -> may-proceed,
+    #      NOT authorized -> deny) is the TRANSFER reading; reusing it for a seize scope
+    #      would report seizability exactly backwards. A seize preflight is a separate
+    #      question with its own evaluator. (base-std#214; guarded by test_preflight.py.)
     for scope_name, scope_hash, subject in (
         ("TRANSFER_SENDER_POLICY", C.B20_POLICY_TRANSFER_SENDER, from_addr),
         ("TRANSFER_RECEIVER_POLICY", C.B20_POLICY_TRANSFER_RECEIVER, to_addr),
@@ -135,6 +153,19 @@ def preflight(
             return _unavailable("read_failed", f"policyId({scope_name}) read failed", as_of)
         if pid == 0:
             continue
+        # #41: isAuthorized returns TRUE for a nonexistent policy id, so a scope
+        # pointing at a deleted/never-created policy would false-allow. Gate on
+        # policyExists first: a missing policy is unavailable, NEVER allow.
+        exists = _policy_exists(rpc, pid)
+        if exists is None:
+            return _unavailable("read_failed", f"policyExists({scope_name}) read failed", as_of)
+        if exists is False:
+            return _unavailable(
+                "policy_missing",
+                f"policy {pid} for {scope_name} does not exist — isAuthorized is unreliable for "
+                f"nonexistent policies, so authorization cannot be determined",
+                as_of,
+            )
         authorized = _is_authorized(rpc, pid, subject)
         if authorized is None:
             return _unavailable("read_failed", f"isAuthorized({scope_name}) read failed", as_of)

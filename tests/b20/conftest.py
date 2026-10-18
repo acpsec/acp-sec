@@ -52,6 +52,7 @@ class FakeRpc:
         self.block_number: int = 100
         self.role_logs: dict[str, list] = {}            # role (lower) -> [log]
         self.announcement_logs: list = []
+        self.factory_logs: list = []                    # B20Created logs (creation-block fallback)
         self.logs_fail: bool = False                    # simulate eth_getLogs failure
         # Provider block-range cap emulation: when set, a getLogs whose
         # (toBlock - fromBlock) exceeds it is REJECTED exactly as the real
@@ -72,6 +73,7 @@ class FakeRpc:
         self.creation_code: dict[str, tuple[int, str]] = {}
         self.getcode_fail: bool = False                 # by-block eth_getCode -> None
         self.getcode_calls: list[str] = []              # blocks probed (for assertions)
+        self.getcode_addrs: list[str] = []              # addresses probed (lower; for assertions)
 
     # --- RpcClient surface ------------------------------------------------
     def eth_call(self, to: str, data: str, block: str = "latest") -> Optional[str]:
@@ -81,6 +83,7 @@ class FakeRpc:
     def eth_get_code(self, addr: str, block: str = "latest") -> Optional[str]:
         self.getcode_calls.append(block)
         key = addr.lower()
+        self.getcode_addrs.append(key)
         if key in self.creation_code:
             cb, code = self.creation_code[key]
             if block != "latest" and self.getcode_fail:
@@ -120,6 +123,10 @@ class FakeRpc:
                 cand = [lg for logs in self.role_logs.values() for lg in logs]
         elif t0 == C.B20_EVENT_ANNOUNCEMENT:
             cand = self.announcement_logs
+        elif t0 == C.B20_EVENT_B20_CREATED:
+            cand = self.factory_logs
+            if len(topics) > 1 and topics[1] is not None:   # filter by indexed token
+                cand = [lg for lg in cand if lg["topics"][1] == topics[1]]
         else:
             cand = []
         self.last_error = None
@@ -179,6 +186,17 @@ class FakeRpc:
 
     def set_logs_fail(self, fail: bool = True) -> "FakeRpc":
         self.logs_fail = fail
+        return self
+
+    def set_creation_event(self, token: str, block: int, log_index: int = 0) -> "FakeRpc":
+        """Program a factory B20Created log for `token` at `block` (indexed token
+        topic1), for the get_creation_block factory-log fallback."""
+        self.factory_logs.append({
+            "topics": [C.B20_EVENT_B20_CREATED, _topic_addr(token)],
+            "blockNumber": hex(block),
+            "logIndex": hex(log_index),
+            "transactionHash": "0x" + f"{block:040x}{log_index:024x}",
+        })
         return self
 
     def set_announcements(self, count: int) -> "FakeRpc":

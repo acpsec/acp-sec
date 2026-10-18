@@ -53,6 +53,10 @@ def cd_authorized(pid: int, acct: str) -> str:
     return SEL_IS_AUTHORIZED + R.enc_uint(pid) + R.enc_address(acct)
 
 
+def cd_policy_exists(pid: int) -> str:
+    return C.B20_SELECTOR_POLICY_EXISTS + R.enc_uint(pid)
+
+
 def cd_balance(acct: str) -> str:
     return SEL_BALANCE_OF + R.enc_address(acct)
 
@@ -76,8 +80,10 @@ def _rpc(
     f.set_call(cd_policy_id(C.B20_POLICY_TRANSFER_SENDER), _uw(sender_pid))
     f.set_call(cd_policy_id(C.B20_POLICY_TRANSFER_RECEIVER), _uw(receiver_pid))
     if sender_pid != 0:
+        f.set_call(cd_policy_exists(sender_pid), _bw(True))   # #41: a programmed policy exists
         f.set_call(cd_authorized(sender_pid, FROM), _bw(sender_auth))
     if receiver_pid != 0:
+        f.set_call(cd_policy_exists(receiver_pid), _bw(True))
         f.set_call(cd_authorized(receiver_pid, TO), _bw(receiver_auth))
     f.set_call(cd_balance(FROM), _uw(from_bal))
     return f
@@ -267,3 +273,69 @@ def test_response_shape_keys():
     assert set(v.keys()) == {"verdict", "reasons", "as_of_block", "evidence_tier", "deny_class"}
     for r in v["reasons"]:
         assert set(r.keys()) >= {"code", "detail"}
+
+
+# ── 7. policyExists guard (#41 false-allow) ──────────────────────────────
+# The PolicyRegistry precompile returns isAuthorized==TRUE for a NONEXISTENT policy
+# id (live-confirmed on Sepolia 2026-09-25). A token pointing a scope at a deleted /
+# never-created policy would therefore yield a false ALLOW. Preflight must gate on
+# policyExists(pid) before trusting isAuthorized, and treat a missing policy as
+# unavailable — never allow.
+def test_nonexistent_policy_is_unavailable_not_allow():
+    f = _rpc(sender_pid=7, sender_auth=True)      # isAuthorized(7)=True (the trap)
+    f.set_call(cd_policy_exists(7), _bw(False))    # ...but the policy does NOT exist
+    v = _run(f).to_dict()
+    assert v["verdict"] == "unavailable", v      # never allow
+    codes = {r["code"] for r in v["reasons"]}
+    assert "policy_missing" in codes, v          # the exact code the guard emits
+    assert any("does not exist" in r.get("detail", "") for r in v["reasons"]), v
+
+
+def test_policy_exists_read_failure_is_unavailable_not_allow():
+    f = _rpc(sender_pid=7, sender_auth=True)
+    f.set_call(cd_policy_exists(7), None)          # policyExists read reverts/fails
+    v = _run(f).to_dict()
+    assert v["verdict"] == "unavailable", v
+    assert any(r["code"] == "read_failed" for r in v["reasons"])
+
+
+def test_existing_policy_that_authorizes_still_allows():
+    # Guard must not break the happy path: a real, existing policy that authorizes.
+    f = _rpc(sender_pid=7, sender_auth=True, receiver_pid=0)
+    f.set_call(cd_policy_exists(7), _bw(True))
+    v = _run(f).to_dict()
+    assert v["verdict"] == "allow", v
+
+
+def test_existing_policy_that_forbids_still_denies_naming_scope():
+    # A real, existing policy that forbids -> deny (unchanged), scope named.
+    f = _rpc(sender_pid=7, sender_auth=False)
+    f.set_call(cd_policy_exists(7), _bw(True))
+    v = _run(f).to_dict()
+    assert v["verdict"] == "deny", v
+    assert any("TRANSFER_SENDER" in (r.get("detail","")) for r in v["reasons"]), v
+
+
+# ── 8. Seize-scope inversion guard (base-std#214) ────────────────────────
+# SEIZE_EXEMPT_POLICY has INVERTED semantics vs the transfer scopes: an account
+# AUTHORIZED under it is EXEMPT from seizure (NOT seizable); an unset scope (always-
+# allow) keeps seizure CLOSED. Preflight answers "will this TRANSFER clear" and must
+# consume ONLY the transfer scopes. These guards fail loudly if a seize scope is ever
+# wired into the transfer loop (where authorized -> may-proceed would read seizability
+# backwards). can_seize stays a SEIZE_ROLE fact, never a policy read.
+def test_preflight_never_reads_a_seize_scope():
+    f = _rpc()          # clear transfer
+    _run(f)
+    for scope in (C.B20_POLICY_SEIZE_EXEMPT, C.B20_POLICY_SEIZE_RECEIVER):
+        assert cd_policy_id(scope) not in f.calls, f"preflight must not read seize scope {scope}"
+
+
+def test_preflight_scope_loop_is_transfer_scopes_only():
+    # Belt-and-braces: exercise a deny path and confirm ONLY transfer sender/receiver
+    # policyIds were ever queried — no seize/mint/executor scope leaked into the loop.
+    f = _rpc(sender_pid=3, sender_auth=False)
+    f.set_call(cd_policy_exists(3), _bw(True))
+    _run(f)
+    policy_id_calls = {c for c in f.calls if c.startswith(C.B20_SELECTOR_POLICY_ID)}
+    allowed = {cd_policy_id(C.B20_POLICY_TRANSFER_SENDER), cd_policy_id(C.B20_POLICY_TRANSFER_RECEIVER)}
+    assert policy_id_calls <= allowed, f"unexpected policyId scope read: {policy_id_calls - allowed}"
