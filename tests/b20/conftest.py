@@ -73,6 +73,7 @@ class FakeRpc:
         self.creation_code: dict[str, tuple[int, str]] = {}
         self.getcode_fail: bool = False                 # by-block eth_getCode -> None
         self.getcode_calls: list[str] = []              # blocks probed (for assertions)
+        self.getcode_addrs: list[str] = []              # addresses probed (lower; for assertions)
 
     # --- RpcClient surface ------------------------------------------------
     def eth_call(self, to: str, data: str, block: str = "latest") -> Optional[str]:
@@ -82,6 +83,7 @@ class FakeRpc:
     def eth_get_code(self, addr: str, block: str = "latest") -> Optional[str]:
         self.getcode_calls.append(block)
         key = addr.lower()
+        self.getcode_addrs.append(key)
         if key in self.creation_code:
             cb, code = self.creation_code[key]
             if block != "latest" and self.getcode_fail:

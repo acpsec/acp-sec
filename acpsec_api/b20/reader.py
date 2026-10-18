@@ -606,6 +606,26 @@ def read_roles(rpc, token: str, chain_id: int, from_block: int = 0, *, as_of_blo
     }
 
 
+class _HolderCodeCache:
+    """Per-scan memo of holder ``eth_getCode`` at latest, shared by the holder
+    classifiers so each address is fetched once per read_token (admin_is_multisig
+    and admin_is_delegated_eoa read the same code). A failed read (None) is NOT
+    cached — the next classifier retries it, exactly as without the cache."""
+
+    def __init__(self, rpc) -> None:
+        self._rpc = rpc
+        self._code: dict[str, str] = {}
+
+    def eth_get_code(self, addr: str) -> Optional[str]:
+        key = addr.lower()
+        if key not in self._code:
+            code = self._rpc.eth_get_code(addr)
+            if code is None:
+                return None
+            self._code[key] = code
+        return self._code[key]
+
+
 def _classify_multisig(rpc, holders: Optional[list[str]]) -> Optional[bool]:
     if holders is None or len(holders) == 0:
         return None
@@ -968,6 +988,7 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         )
 
     deployed_via_factory = C.OFFICIAL_FACTORY_ADDRESS.get(chain_id) if isb20 is True else None
+    holder_code = _HolderCodeCache(rpc)  # one eth_getCode per holder across classifiers
 
     state_ev: dict[str, StateEvidence] = {}
     if supply["supply_cap"] is not None:
@@ -991,11 +1012,11 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         currency_code=vc["currency_code"],
         # issuer authority (role holders via log replay)
         admin_holders=admin,
-        admin_is_multisig=_classify_multisig(rpc, admin),
+        admin_is_multisig=_classify_multisig(holder_code, admin),
         # EIP-7702: honest note that a single-key admin carries a delegation (still
         # one key). Does NOT change the multisig verdict — _is_contract already reads
         # a delegated EOA as an EOA, so admin_is_multisig stays False.
-        admin_is_delegated_eoa=_classify_delegated_eoa(rpc, admin),
+        admin_is_delegated_eoa=_classify_delegated_eoa(holder_code, admin),
         # [] = revoked ONLY if a grant was ever observed (granted-then-revoked); a
         # never-granted empty replay is None (unknown), so issuer_authority goes
         # UNRATED rather than clean-clearing at 100 on silence (issue #34). None also
@@ -1004,10 +1025,10 @@ def read_token(address: str, chain_id: int, *, rpc=None) -> ScanInputs:
         mint_role_holders=roles["mint"],
         # #69: classify each mint holder EOA-vs-contract (eth_getCode) so
         # issuer_authority can flag a bare-EOA mint key / admin∩mint overlap.
-        mint_holders_eoa=_classify_mint_eoa(rpc, roles["mint"]),
+        mint_holders_eoa=_classify_mint_eoa(holder_code, roles["mint"]),
         burn_role_holders=roles["burn"],
         pause_role_holders=pause,
-        pause_holder_is_multisig=_classify_multisig(rpc, pause),
+        pause_holder_is_multisig=_classify_multisig(holder_code, pause),
         # supply integrity
         supply_cap=supply["supply_cap"],
         multiplier_active=supply["multiplier_active"],

@@ -87,6 +87,25 @@ def test_read_token_mint_holder_contract_is_not_eoa():
     assert inp.mint_holders_eoa == []        # readable, no bare EOA
 
 
+def test_read_token_reads_admin_code_once():
+    # admin_is_multisig and admin_is_delegated_eoa are both derived from the admin's
+    # eth_getCode; read_token must fetch it ONCE per holder, not once per classifier.
+    f = _good_asset()
+    inp = R.read_token(ASSET, 84532, rpc=f)
+    assert inp.admin_is_multisig is True and inp.admin_is_delegated_eoa is False
+    assert f.getcode_addrs.count(ADMIN.lower()) == 1
+
+
+def test_read_token_delegated_admin_code_once_same_verdicts():
+    # EIP-7702 delegated admin: still one key (not multisig), delegation surfaced —
+    # same verdicts as before, from a single eth_getCode.
+    f = _good_asset()
+    f.set_code(ADMIN, "0xef0100" + "63c0c19a282a1b52b07dd5a65b58948a07dae32b")
+    inp = R.read_token(ASSET, 84532, rpc=f)
+    assert inp.admin_is_multisig is False and inp.admin_is_delegated_eoa is True
+    assert f.getcode_addrs.count(ADMIN.lower()) == 1
+
+
 def test_read_token_passes_creation_block_to_role_scan(monkeypatch):
     # read_token looks up the token's creation block and threads it into the
     # role-holder scan as from_block (bounding the getLogs range).
