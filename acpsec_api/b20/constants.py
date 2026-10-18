@@ -32,6 +32,26 @@ OFFICIAL_FACTORY_ADDRESS: dict[int, str] = {
     84532: "0xB20f000000000000000000000000000000000000",
 }
 
+# --- Factory activation block (lower bound for B20Created scans) ----------
+# First block at which the factory precompile exists. No B20Created log can sit
+# below it, so the creation-block fallback scans [activation, latest] instead of
+# from genesis (~52.8M blocks on mainnet). A chain ABSENT here has no verified
+# bound: the fallback returns None for it rather than scan from block 0.
+#
+# Derived 2026-10-18 by binary-searching eth_call isB20(address(0)) on the factory
+# at historical blocks: block N-1 returns "0x" (no precompile), block N returns a
+# decoded false (precompile live). Boundary cross-checked on independent providers.
+#   8453:  47810527 (0xf18566e1…bd49127, 2026-06-25T18:00:01Z) — base.org, drpc, tenderly.
+#          ASSET/STABLECOIN features activated later (48379230 / 48379215).
+#          Earliest B20Created not cross-checked (no free mainnet getLogs provider).
+#   84532: 43018656 (0x588bb4e5…bd114b, 2026-06-18T18:00:00Z) — base.org, tenderly.
+#          Earliest B20Created = 43020461 (tx 0xfce0df5d…598c2146f); none in the
+#          5000 blocks below the bound.
+B20_FACTORY_ACTIVATION_BLOCK: dict[int, int] = {
+    8453: 47_810_527,
+    84532: 43_018_656,
+}
+
 # --- Supply sentinel ------------------------------------------------------
 # No-cap sentinel: a supply cap equal to type(uint128).max means uncapped /
 # infinite mint (a critical condition). CONFIRMED = B20Constants.MAX_SUPPLY_CAP.

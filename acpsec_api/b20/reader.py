@@ -376,12 +376,17 @@ def _creation_block_via_getcode(rpc, token: str, latest: int) -> Optional[int]:
 def _creation_block_from_factory(rpc, token: str, chain_id: int) -> Optional[int]:
     """Creation block from the factory's ``B20Created(address indexed token, ...)`` log,
     filtered by the indexed token. None if the factory is unknown, no matching log
-    exists, or the read fails. Provider-agnostic (getLogs, no archive getCode)."""
+    exists, or the read fails. Provider-agnostic (getLogs, no archive getCode).
+
+    The scan starts at the factory's verified activation block — nothing below it
+    can hold a B20Created log, and a from-genesis walk on mainnet is thousands of
+    chunks. A chain with no verified activation block returns None (honest degrade)."""
     factory = C.OFFICIAL_FACTORY_ADDRESS.get(chain_id)
-    if factory is None:
+    activation = C.B20_FACTORY_ACTIVATION_BLOCK.get(chain_id)
+    if factory is None or activation is None:
         return None
     topics = [C.B20_EVENT_B20_CREATED, "0x" + enc_address(token)]
-    logs = _get_logs_full_or_chunked(rpc, factory, topics, chain_id)
+    logs = _get_logs_full_or_chunked(rpc, factory, topics, chain_id, from_block=activation)
     if not logs:
         return None
     blocks = [int(lg["blockNumber"], 16) for lg in logs if lg.get("blockNumber")]
