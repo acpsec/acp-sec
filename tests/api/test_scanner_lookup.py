@@ -3,8 +3,9 @@
 SECURITY-SENSITIVE: the auth gate and the external Nitter fetch. Every test
 mocks the scraper — there are NO live network calls in this suite.
 
-Auth truth table (SCANNER_TOKEN set): allow iff same-origin OR valid
-X-Scanner-Token; else 401. SCANNER_TOKEN unset → open.
+Auth truth table (SCANNER_TOKEN set): allow iff valid X-Scanner-Token; else
+401. Origin/Host are ignored (the Flask same-origin shortcut was a bypass).
+SCANNER_TOKEN unset or blank → open.
 
 Contract:
     gate denied           -> 401 {"ok": False, "error": <denial>}
@@ -93,17 +94,48 @@ def test_lookup_allowed_with_token(scanner_client, monkeypatch) -> None:
     assert resp.json() == {"ok": True, "data": _MOCK_PROFILE}
 
 
-def test_lookup_allowed_same_origin(scanner_client, monkeypatch) -> None:
+def test_lookup_denied_spoofed_same_origin(scanner_client, monkeypatch) -> None:
+    # Regression: Origin host == Host header used to skip the token. Any
+    # non-browser client can forge Origin, so it must NOT grant access.
     monkeypatch.setenv("SCANNER_TOKEN", "sekret")
-    client = scanner_client(_mock_scraper(_MOCK_PROFILE))
+    client = scanner_client()  # scraper never reached — gate rejects first
     # Starlette TestClient's default Host is "testserver".
     resp = client.post(
         "/api/scanner/lookup",
         json={"username": "agentx"},
         headers={"Origin": "http://testserver"},
     )
+    assert resp.status_code == 401
+    assert resp.json() == {"ok": False, "error": SCANNER_DENIED_ERROR}
+
+
+def test_lookup_open_when_token_blank(scanner_client, monkeypatch) -> None:
+    # A whitespace-only token counts as unset (open) — and /api/health reports
+    # scanner_protected=False for it (see test_health), so the two agree.
+    monkeypatch.setenv("SCANNER_TOKEN", "   ")
+    client = scanner_client(_mock_scraper(_MOCK_PROFILE))
+    resp = client.post("/api/scanner/lookup", json={"username": "agentx"})
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "data": _MOCK_PROFILE}
+
+
+def test_lookup_non_ascii_token_denied_not_crash(scanner_client, monkeypatch) -> None:
+    # compare_digest rejects non-ASCII str; the gate compares the raw header
+    # bytes with the token's UTF-8 bytes, so a mismatch is a clean 401 (no 500)
+    # and a UTF-8 client sending the right token passes.
+    monkeypatch.setenv("SCANNER_TOKEN", "sëkret")
+    client = scanner_client(_mock_scraper(_MOCK_PROFILE))
+    wrong = client.post(
+        "/api/scanner/lookup",
+        json={"username": "agentx"},
+        headers={"X-Scanner-Token": "sekret"},
+    )
+    assert wrong.status_code == 401
+    right = client.post(
+        "/api/scanner/lookup",
+        json={"username": "agentx"},
+        headers={"X-Scanner-Token": "sëkret".encode("utf-8")},
+    )
+    assert right.status_code == 200
 
 
 def test_lookup_open_when_token_unset(scanner_client, monkeypatch) -> None:

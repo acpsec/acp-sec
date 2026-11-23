@@ -8,7 +8,8 @@ Response (status 200):
 
 The `*_configured` booleans report whether a required prod secret is present
 (never the value) so an env-precondition smoke check can catch a missing var.
-Same idiom as `scanner_protected`.
+Same idiom as `scanner_protected`, which uses the gate's own predicate
+(`scanner_token()`) so it is true only when the scanner gate actually enforces.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import os
 from fastapi import APIRouter
 
 from acpsec_api.availability import ACPSEC_AVAILABLE
+from acpsec_api.scanner_auth import scanner_token
 
 router = APIRouter()
 
@@ -29,6 +31,6 @@ def health() -> dict[str, object]:
         "ok": True,
         "service": "acp-sec-dashboard",
         "acpsec_available": bool(ACPSEC_AVAILABLE),
-        "scanner_protected": bool(os.environ.get("SCANNER_TOKEN")),
+        "scanner_protected": bool(scanner_token()),
         "leaderboard_configured": bool(os.environ.get("LEADERBOARD_PASSWORD")),
     }

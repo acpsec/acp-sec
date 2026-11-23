@@ -35,3 +35,12 @@ def test_health_returns_expected_shape(fastapi_client, monkeypatch) -> None:
     body = fastapi_client.get("/api/health").json()
     assert body["scanner_protected"] is True
     assert body["leaderboard_configured"] is True
+
+
+def test_health_blank_scanner_token_not_protected(fastapi_client, monkeypatch) -> None:
+    # Regression: a whitespace-only SCANNER_TOKEN leaves the gate OPEN (it strips
+    # the value), so health must not report it as protected. The flag uses the
+    # gate's own predicate — the prod-smoke precondition check relies on it.
+    monkeypatch.setenv("SCANNER_TOKEN", "   ")
+    body = fastapi_client.get("/api/health").json()
+    assert body["scanner_protected"] is False

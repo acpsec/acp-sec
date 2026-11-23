@@ -12,6 +12,7 @@ NOT ported here.
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -93,7 +94,13 @@ async def leaderboard_auth(
         body = {}
     if not isinstance(body, dict):
         body = {}
-    if body.get("password") != password:
+    given = body.get("password")
+    # Constant-time compare (as bytes — compare_digest rejects non-ASCII str;
+    # "surrogatepass" encodes any str, incl. lone surrogates from JSON escapes).
+    if not isinstance(given, str) or not hmac.compare_digest(
+        given.encode("utf-8", "surrogatepass"),
+        password.encode("utf-8", "surrogatepass"),
+    ):
         return JSONResponse({"ok": False, "error": "Incorrect password"}, status_code=401)
 
     token = sessions.create()

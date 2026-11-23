@@ -17,15 +17,19 @@ from acpsec_api.routers import b20, health, leaderboard, onchain, scanner, score
 
 # --- CORS (Task 2.8) ------------------------------------------------------
 # Credentialed CORS (cookie auth) forbids a wildcard origin, so the allowlist is
-# explicit static entries + a regex for Vercel preview deploys. Both are
-# env-overridable so staging/prod can lock the list down without a code change.
+# explicit static entries, plus an OPT-IN regex. Both are env-overridable so
+# staging/prod can lock the list down without a code change.
 _DEFAULT_CORS_ORIGINS = [
     "https://acpsec.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-# Vercel preview URLs: acpsec-web-<hash>-<scope>.vercel.app
-_DEFAULT_CORS_ORIGIN_REGEX = r"https://acpsec-web-[a-z0-9-]+\.vercel\.app"
+# No default origin regex. The former default (https://acpsec-web-[a-z0-9-]+\.vercel\.app)
+# matched ANY Vercel project named "acpsec-web-*": vercel.app hostnames are
+# first-come across all Vercel accounts, so anyone could host a credentialed,
+# allowed origin — and it matched none of our real projects. Prefer exact
+# origins; set CORS_ALLOWED_ORIGIN_REGEX only for hostnames you control.
+_DEFAULT_CORS_ORIGIN_REGEX: str | None = None
 
 
 def _cors_origins() -> list[str]:
@@ -36,8 +40,8 @@ def _cors_origins() -> list[str]:
     return _DEFAULT_CORS_ORIGINS
 
 
-def _cors_origin_regex() -> str:
-    """Preview-deploy regex — CORS_ALLOWED_ORIGIN_REGEX overrides."""
+def _cors_origin_regex() -> str | None:
+    """Origin regex — opt-in via CORS_ALLOWED_ORIGIN_REGEX (default: none)."""
     return os.environ.get("CORS_ALLOWED_ORIGIN_REGEX", "").strip() or _DEFAULT_CORS_ORIGIN_REGEX
 
 

@@ -77,18 +77,20 @@ deliberate fix), not omissions.
 
 | Variable | Consumed by | Default | Purpose |
 |----------|-------------|---------|---------|
-| `SCANNER_TOKEN` | scanner + onchain gate (`scanner_auth.py`) | unset = **open** (dev) | SSRF gate: allow same-origin browser requests or a matching `X-Scanner-Token` header. |
+| `SCANNER_TOKEN` | scanner + onchain gate (`scanner_auth.py`) | unset/blank = **open** (dev) | SSRF gate: allow only a matching `X-Scanner-Token` header (constant-time). The Flask same-origin shortcut (Origin host == Host) was removed — both headers are client-forgeable. |
 | `LEADERBOARD_PASSWORD` | `/api/leaderboard/auth` | unset = **open** | Password for the leaderboard session cookie. |
 | `ANTHROPIC_API_KEY` | `/api/chat/sentryagent` (`get_anthropic_client`) | unset → 503 | Server-side Claude key; never sent by the client. |
 | `BASE_RPC_URL` | `/api/onchain/check` | unset → `mainnet.base.org` default | Optional Base RPC endpoint override. |
 | `CORS_ALLOWED_ORIGINS` | CORS middleware (`main.py`) | built-in static list | Comma-separated allowlist override (staging/prod lock-down). |
-| `CORS_ALLOWED_ORIGIN_REGEX` | CORS middleware | Vercel-preview regex | Override the preview-deploy origin regex. |
+| `CORS_ALLOWED_ORIGIN_REGEX` | CORS middleware | none | Opt-in origin regex. Only for hostnames you control — `*.vercel.app` names are first-come across all Vercel accounts. |
 | `ACPSEC_COOKIE_SAMESITE` | `lb_session` cookie (`sessions.py`) | `none` | Local-dev override (`lax` for plain-http localhost). |
 | `ACPSEC_COOKIE_SECURE` | `lb_session` cookie | `true` | Local-dev override (`false` for plain-http localhost). |
 
 Static CORS allowlist default: `https://acpsec.app`, `http://localhost:3000`,
-`http://127.0.0.1:3000`, plus the Vercel-preview regex
-`https://acpsec-web-[a-z0-9-]+\.vercel\.app`. Credentialed CORS never uses `*`.
+`http://127.0.0.1:3000`; no origin regex unless `CORS_ALLOWED_ORIGIN_REGEX` is
+set. (The former default `https://acpsec-web-[a-z0-9-]+\.vercel\.app` admitted
+any Vercel project named `acpsec-web-*` — attacker-registrable — and matched
+none of our real projects.) Credentialed CORS never uses `*`.
 
 ## Cutover checklist (reminder — executed in later groups)
 

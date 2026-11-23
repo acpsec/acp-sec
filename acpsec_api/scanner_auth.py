@@ -1,36 +1,32 @@
 """Scanner auth gate — reusable FastAPI dependency.
 
-Contract-identical port of ``_require_scanner_token`` / ``_is_same_origin_request``
-in dashboard/serve.py. Gates the SSRF-sensitive scanner endpoints:
+Gates the SSRF-sensitive scanner endpoints:
 
-    - allow when SCANNER_TOKEN is unset (open dev mode)
-    - allow same-origin browser requests (Origin host == Host header)
+    - allow when SCANNER_TOKEN is unset or blank (open dev mode)
     - allow explicit X-Scanner-Token header matching SCANNER_TOKEN
+      (constant-time comparison)
     - otherwise → 401 {"ok": False, "error": <denial message>}
 
 Reused by /api/scanner/lookup (2.5a), /scan + /bulk (2.5b), and
 /api/onchain/check (2.6).
 
-SPLIT-ORIGIN NOTE: the same-origin path is preserved from Flask EXACTLY for
-parity. In Task 2.8 the frontend (Vercel) and backend (Railway) become
-different origins, so the same-origin path will no longer apply — cross-origin
-callers will need X-Scanner-Token. That adaptation belongs to 2.8. Do NOT
-change the logic here.
+SAME-ORIGIN SHORTCUT REMOVED: the Flask original also allowed requests whose
+Origin host equalled the Host header. Both headers are client-controlled, so
+any non-browser caller could send ``Origin: https://<api host>`` and skip the
+token entirely. Since the split-origin deployment (Task 2.8: frontend on
+Vercel, API on Railway) no legitimate caller is same-origin — the frontend
+already sends X-Scanner-Token — so the shortcut was only ever a bypass.
 """
 
 from __future__ import annotations
 
+import hmac
 import os
-from urllib.parse import urlparse
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-# Exact denial body from Flask (dashboard/serve.py).
-SCANNER_DENIED_ERROR = (
-    "scanner endpoint requires same-origin browser request "
-    "OR X-Scanner-Token header"
-)
+SCANNER_DENIED_ERROR = "scanner endpoint requires X-Scanner-Token header"
 SCANNER_DENIED_BODY = {"ok": False, "error": SCANNER_DENIED_ERROR}
 
 
@@ -43,43 +39,39 @@ class ScannerAccessDenied(Exception):
     """
 
 
-def is_same_origin_request(request: Request) -> bool:
-    """True iff the request's Origin host matches its Host header.
+def scanner_token() -> str:
+    """The configured SCANNER_TOKEN, whitespace-stripped ("" = unset/blank).
 
-    Mirrors Flask's ``_is_same_origin_request``: compares HOSTS (not full
-    URLs) so upstream TLS termination (Railway) doesn't cause a scheme
-    mismatch. Uses only the Origin header — never Referer.
+    Single source of truth for "is the gate enforcing?" — the gate below and
+    /api/health's ``scanner_protected`` both read it, so the health flag can
+    never report protection the gate does not enforce (e.g. a blank value).
     """
-    origin = request.headers.get("origin", "")
-    if not origin or origin == "null":
-        return False
-    try:
-        origin_host = urlparse(origin).netloc.lower()
-    except Exception:
-        return False
-    host = request.headers.get("host", "").lower()
-    return bool(origin_host) and origin_host == host
+    return os.environ.get("SCANNER_TOKEN", "").strip()
 
 
 def require_scanner_access(request: Request) -> None:
     """FastAPI dependency: allow (return None) or raise ScannerAccessDenied.
 
-    Same truth table as Flask's ``_require_scanner_token``:
-      * SCANNER_TOKEN unset  → allow (open)
-      * same-origin request  → allow
-      * valid X-Scanner-Token→ allow
-      * else                 → deny (401)
+    Truth table (Origin / Host are ignored — see module docstring):
+      * SCANNER_TOKEN unset/blank → allow (open)
+      * valid X-Scanner-Token     → allow
+      * else                      → deny (401)
     """
-    required = os.environ.get("SCANNER_TOKEN", "").strip()
+    required = scanner_token()
     if not required:
         # No token configured → endpoints behave exactly as in dev (open).
         return
 
-    if is_same_origin_request(request):
-        return
-
     sent = request.headers.get("x-scanner-token", "").strip()
-    if not sent or sent != required:
+    # compare_digest is constant-time, so response timing reveals nothing about
+    # how much of a guessed token matched. It needs bytes for non-ASCII input:
+    # Starlette decodes header bytes as latin-1 (lossless), so encoding back to
+    # latin-1 recovers exactly what the client sent, compared against the
+    # token's UTF-8 bytes ("surrogatepass" encodes any env str without raising).
+    if not sent or not hmac.compare_digest(
+        sent.encode("latin-1"),
+        required.encode("utf-8", "surrogatepass"),
+    ):
         raise ScannerAccessDenied()
     return
 
