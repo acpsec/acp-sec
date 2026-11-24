@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 # Cookie / session constants — matched to Flask (dashboard/serve.py).
@@ -37,19 +39,41 @@ def cookie_secure() -> bool:
 
 
 class LbSessions:
-    """In-memory token → expiry map for leaderboard auth."""
+    """In-memory token → expiry map for leaderboard auth (bounded, thread-safe).
 
-    def __init__(self) -> None:
-        self._sessions: dict[str, datetime] = {}
+    Expired sessions are pruned whenever one is created, and beyond
+    ``max_sessions`` the oldest are dropped, so the map cannot grow without
+    bound. ``clock`` is injectable for tests.
+    """
+
+    def __init__(
+        self,
+        max_sessions: int = 10_000,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self.max_sessions = max_sessions
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._lock = threading.Lock()
+        self._sessions: dict[str, datetime] = {}  # insertion order = oldest first
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._sessions)
 
     def create(self) -> str:
         """Mint a new session token and record its expiry."""
         token = "lb_" + secrets.token_urlsafe(24)
-        expiry = datetime.now(timezone.utc) + timedelta(days=LB_SESSION_DAYS)
-        self._sessions[token] = expiry
+        now = self._clock()
+        with self._lock:
+            for expired in [t for t, exp in self._sessions.items() if exp <= now]:
+                del self._sessions[expired]
+            self._sessions[token] = now + timedelta(days=LB_SESSION_DAYS)
+            while len(self._sessions) > self.max_sessions:
+                del self._sessions[next(iter(self._sessions))]
         return token
 
     def valid(self, token: str) -> bool:
         """Return True if the token maps to a live (unexpired) session."""
-        expiry = self._sessions.get(token or "")
-        return bool(expiry and datetime.now(timezone.utc) < expiry)
+        with self._lock:
+            expiry = self._sessions.get(token or "")
+        return bool(expiry and self._clock() < expiry)

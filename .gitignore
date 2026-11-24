@@ -7,6 +7,13 @@
 secrets/
 credentials.json
 
+# ── Claude Code — machine-local, never public ─────────────────────────────
+# settings.local.json = local permission rules (command lines can embed
+# credentials); completions/ = local working notes (public notes live in docs/).
+# The shared .claude/settings.json stays committable.
+.claude/settings.local.json
+.claude/completions/
+
 # ── Python ────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

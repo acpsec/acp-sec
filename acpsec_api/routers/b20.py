@@ -14,6 +14,10 @@ same ``ScanResult.to_dict()`` body — with two deliberate changes:
 
 The three ``get_*`` providers are the injection seams: tests override them via
 ``app.dependency_overrides`` so the suite never touches the network.
+
+Not token-gated (public), so both endpoints are rate limited per client
+(``acpsec_api.rate_limit``: 429) and hold a ``concurrency.slot("b20")`` while
+their RPC runs (503 when the cap is full).
 """
 
 from __future__ import annotations
@@ -26,6 +30,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from acpsec_api.b20.engine import assess
+from acpsec_api.concurrency import slot
+from acpsec_api.rate_limit import rate_limited
 from acpsec_api.b20.preflight import preflight
 from acpsec_api.b20.reader import B20Unavailable, read_token
 from acpsec_api.b20.rpc import RpcClient
@@ -75,6 +81,7 @@ def _error(status: int, error: str, detail: str) -> JSONResponse:
 @router.post("/api/b20/scan")
 def b20_scan(
     body: B20ScanRequest,
+    _limit: None = Depends(rate_limited("b20_scan")),
     read_fn=Depends(get_read_fn),
     scorer=Depends(get_scorer),
     rpc_factory=Depends(get_rpc_factory),
@@ -93,31 +100,33 @@ def b20_scan(
             f"chain_id {chain_id} is not one of {list(SUPPORTED_CHAINS)}.",
         )
 
-    try:
-        rpc = rpc_factory(chain_id)
-    except Exception as exc:  # noqa: BLE001
-        return _error(
-            503, "rpc_unreachable", f"cannot initialise RPC for chain {chain_id}: {exc}"
-        )
+    with slot("b20"):  # RPC-bound; this sync handler already runs in the threadpool
+        try:
+            rpc = rpc_factory(chain_id)
+        except Exception as exc:  # noqa: BLE001
+            return _error(
+                503, "rpc_unreachable", f"cannot initialise RPC for chain {chain_id}: {exc}"
+            )
 
-    # Definitive negative (not a B20 token / not initialized / feature off).
-    try:
-        inputs = read_fn(address, chain_id, rpc=rpc)
-    except B20Unavailable as exc:
-        return _error(400, "not_b20", str(exc))
+        # Definitive negative (not a B20 token / not initialized / feature off).
+        try:
+            inputs = read_fn(address, chain_id, rpc=rpc)
+        except B20Unavailable as exc:
+            return _error(400, "not_b20", str(exc))
 
-    # Entirely unreachable (no response to any call) vs reachable-but-unrated.
-    if getattr(rpc, "attempts", 0) > 0 and not getattr(rpc, "any_response", True):
-        return _error(
-            503, "rpc_unreachable", f"chain {chain_id} RPC returned no response to any call."
-        )
+        # Entirely unreachable (no response to any call) vs reachable-but-unrated.
+        if getattr(rpc, "attempts", 0) > 0 and not getattr(rpc, "any_response", True):
+            return _error(
+                503, "rpc_unreachable", f"chain {chain_id} RPC returned no response to any call."
+            )
 
-    return scorer(inputs).to_dict()
+        return scorer(inputs).to_dict()
 
 
 @router.post("/api/b20/preflight")
 def b20_preflight(
     body: PreflightRequest,
+    _limit: None = Depends(rate_limited("b20_preflight")),
     preflight_fn=Depends(get_preflight_fn),
     rpc_factory=Depends(get_rpc_factory),
 ):
@@ -141,11 +150,14 @@ def b20_preflight(
             400, "invalid_amount", f"amount {body.amount!r} is not a non-negative integer."
         )
 
-    try:
-        rpc = rpc_factory(body.chain_id)
-    except Exception as exc:  # noqa: BLE001
-        return _error(
-            503, "rpc_unreachable", f"cannot initialise RPC for chain {body.chain_id}: {exc}"
-        )
+    with slot("b20"):
+        try:
+            rpc = rpc_factory(body.chain_id)
+        except Exception as exc:  # noqa: BLE001
+            return _error(
+                503, "rpc_unreachable", f"cannot initialise RPC for chain {body.chain_id}: {exc}"
+            )
 
-    return preflight_fn(body.token, body.chain_id, body.from_addr, body.to, amount, rpc=rpc).to_dict()
+        return preflight_fn(
+            body.token, body.chain_id, body.from_addr, body.to, amount, rpc=rpc
+        ).to_dict()

@@ -58,6 +58,9 @@ Staging is **ephemeral** — the file stores under `dashboard/`
 (`score_store.json`, `scan_store.json`, `leaderboard.json`, `reports/*.json`)
 live on Railway's ephemeral filesystem and reset on every redeploy. Committed
 seeds re-appear; runtime writes (new scans, leaderboard upserts) are lost.
+Since the abuse-hardening change the only runtime files are `data/leaderboard.json`
+and `data/reports/*.json`: the dashboard score is per-visitor and in memory, and
+the write-only `scan_store.json` is gone.
 
 **This is not acceptable for prod.** The live prod dashboard's history
 (the committed `dashboard/leaderboard.json` + 25 `dashboard/reports/*.json`

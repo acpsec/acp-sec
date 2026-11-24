@@ -15,12 +15,12 @@ from acpsec_api.deps import (
     get_onchain_checker,
     get_profile_scraper,
     get_reports_dir,
-    get_scan_store_path,
     get_scanner_engine,
 )
 from acpsec_api.leaderboard_store import LeaderboardStore
 from acpsec_api.main import app
 from acpsec_api.rate_limit import LIMITS, RATE_LIMITED_ERROR, SlidingWindowLimiter, client_key
+from acpsec_api.routers import b20 as b20_router
 
 
 class _Clock:
@@ -29,6 +29,11 @@ class _Clock:
 
     def __call__(self) -> float:
         return self.t
+
+
+class _B20Result:
+    def to_dict(self) -> dict:
+        return {"ok": True}
 
 
 class _Engine:
@@ -57,7 +62,10 @@ def client(tmp_path, clock, monkeypatch):
         get_onchain_checker: lambda: (lambda wallet, *, rpc_url=None: {"wallet": wallet}),
         get_leaderboard_store: lambda: LeaderboardStore(path=tmp_path / "lb.json"),
         get_reports_dir: lambda: tmp_path / "reports",
-        get_scan_store_path: lambda: tmp_path / "scan.json",
+        b20_router.get_read_fn: lambda: (lambda address, chain_id, rpc=None: {}),
+        b20_router.get_scorer: lambda: (lambda inputs: _B20Result()),
+        b20_router.get_rpc_factory: lambda: (lambda chain_id: object()),
+        b20_router.get_preflight_fn: lambda: (lambda *a, **k: _B20Result()),
     }
     app.dependency_overrides.update(overrides)
     try:
@@ -72,6 +80,11 @@ ENDPOINTS = {
     "scanner_scan": ("/api/scanner/scan", {"url": "https://agent.example"}),
     "scanner_bulk": ("/api/scanner/bulk", {"usernames": ["a"]}),
     "onchain_check": ("/api/onchain/check", {"wallet": "0x" + "1" * 40}),
+    "b20_scan": ("/api/b20/scan", {"address": "0x" + "2" * 40, "chain_id": 84532}),
+    "b20_preflight": ("/api/b20/preflight", {
+        "token": "0x" + "2" * 40, "chain_id": 84532,
+        "from": "0x" + "3" * 40, "to": "0x" + "4" * 40, "amount": "1",
+    }),
 }
 
 

@@ -7,23 +7,27 @@ per client (``acpsec_api.rate_limit``; 429 when exceeded):
     - POST /api/scanner/scan    (2.5b-i) — heuristic scan + leaderboard/report writes
 
     - POST /api/scanner/bulk    (2.5b-ii) — batch scan up to 10 X usernames
+
+The blocking work (engine, Nitter, store writes) runs in the threadpool inside a
+``concurrency.slot`` — never on the event loop; a full cap answers 503.
 """
 
 from __future__ import annotations
 
-import json
+import copy
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
+from acpsec_api.concurrency import slot
 from acpsec_api.deps import (
     get_leaderboard_store,
     get_profile_scraper,
     get_reports_dir,
-    get_scan_store_path,
     get_scanner_engine,
 )
 from acpsec_api.leaderboard_store import LeaderboardStore
@@ -46,14 +50,27 @@ BULK_SCAN_DELAY_SECONDS = 5
 _BULK_URL_TEMPLATE = "https://twitter.com/{username}"
 
 
+def _persistable(data: dict, scan_mode: str) -> dict | None:
+    """Server-only snapshot of an engine result for the leaderboard/report.
+
+    Taken BEFORE any client-supplied field (display name, X handle, ``scraped``
+    flag, bio-derived token) is merged into the response, so what is persisted
+    comes only from the server's own fetch. Exact-path scans are never
+    persisted: an entry reflects its site's landing page, not a deep path a
+    caller picked.
+    """
+    return copy.deepcopy(data) if scan_mode == "root" else None
+
+
 def _persist_leaderboard_and_report(
     lb_store: LeaderboardStore, reports_dir: Path, data: dict
 ) -> None:
-    """Best-effort leaderboard upsert + report write for a successful scan.
+    """Best-effort leaderboard upsert + report write for a completed scan.
 
-    Shared verbatim by /scan and /bulk. Each write is independently guarded —
-    a store failure must never break a scan (mirrors the two try blocks in the
-    Flask handlers).
+    ``data`` is a ``_persistable`` snapshot. The entry — and so the report id —
+    is keyed on the scanned host (``LeaderboardStore.upsert``); the report
+    carries the entry's own name and no client-asserted X handle. A store
+    failure must never break a scan.
 
     #81: an UNRATED scan (fetch-failed / no-website / social-only) is NOT ranked
     or archived — a merely-unreachable site must never be persisted as a public
@@ -63,83 +80,38 @@ def _persist_leaderboard_and_report(
     if data.get("rated") is False:
         return
     try:
-        lb_store.upsert(data)
+        entry = lb_store.upsert(data)
     except Exception:  # noqa: BLE001 — leaderboard must never break a scan
-        pass
+        return
+    if not entry:
+        return
+    record = {**data, "agent_name": entry["name"], "x_username": "", "x_handle_verified": False}
     try:
-        write_report(reports_dir, data)
+        write_report(reports_dir, entry["id"], record)
     except Exception:  # noqa: BLE001
         pass
 
 
-@router.post("/api/scanner/lookup")
-async def scanner_lookup(
-    request: Request,
-    _gate: None = Depends(require_scanner_access),
-    _limit: None = Depends(rate_limited("scanner_lookup")),  # after the gate: 401s cost nothing
-    scraper: Optional[Callable[[str], dict]] = Depends(get_profile_scraper),
+def _scan_and_persist(
+    engine: Any,
+    payload: dict,
+    url: str,
+    agent_name: str,
+    username: str,
+    scan_mode: str,
+    scraped: bool,
+    lb_store: LeaderboardStore,
+    reports_dir: Path,
 ) -> Any:
-    """Scrape basic X/Twitter profile info via Nitter.
-
-    Request body: { "username": "@agentname" }
-    Returns: { ok, data: { username, display_name, bio, website, avatar_url, ... } }
-    """
-    if not is_json_request(request):
-        return JSONResponse(
-            {"error": "Content-Type must be application/json"}, status_code=415
-        )
-    payload = await request.json()
-    username = (payload.get("username") or "").strip()
-    if not username:
-        return JSONResponse({"error": "'username' is required"}, status_code=422)
-
-    if scraper is None:
-        return JSONResponse({"error": "scanner module not available"}, status_code=503)
-
-    result = scraper(username)
-    return {"ok": True, "data": result}
-
-
-@router.post("/api/scanner/scan")
-async def scanner_scan(
-    request: Request,
-    _gate: None = Depends(require_scanner_access),
-    _limit: None = Depends(rate_limited("scanner_scan")),  # after the gate: 401s cost nothing
-    engine: Optional[Any] = Depends(get_scanner_engine),
-    lb_store: LeaderboardStore = Depends(get_leaderboard_store),
-    reports_dir: Path = Depends(get_reports_dir),
-    scan_store_path: Path = Depends(get_scan_store_path),
-) -> Any:
-    """Heuristic website security analysis mapped to acpsec checks.
-
-    Request body: { url, agent_name?, username?, scan_mode?, scraped?, x_bio? }
-    Returns: { ok, data: <dashboard wire format> } or { ok: false, error }.
-    On success, writes the last scan, upserts the leaderboard, and saves the
-    full report — all best-effort (a store failure never breaks the scan).
-    """
-    if not is_json_request(request):
-        return JSONResponse(
-            {"error": "Content-Type must be application/json"}, status_code=415
-        )
-    payload    = await request.json()
-    url        = (payload.get("url") or "").strip()
-    agent_name = (payload.get("agent_name") or "").strip()
-    username   = (payload.get("username")   or "").strip()
-    scan_mode  = (payload.get("scan_mode")  or "root").strip().lower()
-    # `scraped` is True only when the X profile was successfully fetched via
-    # Nitter — used by the UI to decide whether to render the @handle.
-    scraped    = bool(payload.get("scraped", False))
-
-    if scan_mode not in ("root", "exact"):
-        scan_mode = "root"
-
-    if engine is None:
-        return JSONResponse({"error": "scanner module not available"}, status_code=503)
-
+    """Blocking part of /scan (runs in the threadpool): engine, display fields,
+    best-effort writes. Returns the response body (or a 422 JSONResponse)."""
     result = engine.analyze_agent(url, agent_name or url, scan_mode=scan_mode)
     if not result["ok"]:
         return JSONResponse(result, status_code=422)
+    persisted = _persistable(result["data"], scan_mode)
 
+    # Display-only from here on: the fields below come from the client and are
+    # echoed in this response, never persisted (see _persistable).
     # Attach the X username only when it came from a verified scrape — prevents
     # stale @handles after the user pivots following a scrape failure.
     result["data"]["x_username"]        = username if scraped else ""
@@ -170,16 +142,118 @@ async def scanner_scan(
         except Exception:  # noqa: BLE001
             pass
 
-    # Persist last scan (best-effort) — single-scan only; /bulk does not do this.
-    try:
-        scan_store_path.write_text(json.dumps(result["data"], indent=2, default=str))
-    except OSError:
-        pass
-
     # Auto-add to leaderboard + save the full breakdown (both best-effort).
-    _persist_leaderboard_and_report(lb_store, reports_dir, result["data"])
+    if persisted is not None:
+        _persist_leaderboard_and_report(lb_store, reports_dir, persisted)
 
     return result
+
+
+def _scan_batch(
+    engine: Any,
+    usernames: list[str],
+    scan_mode: str,
+    lb_store: LeaderboardStore,
+    reports_dir: Path,
+) -> list[dict]:
+    """Blocking part of /bulk (runs in the threadpool): sequential scans with
+    the inter-scan throttle. Per-item failures are captured, not raised."""
+    results = []
+    for i, username in enumerate(usernames):
+        if i > 0:
+            time.sleep(BULK_SCAN_DELAY_SECONDS)  # throttle between scans
+
+        url = _BULK_URL_TEMPLATE.format(username=username)
+        try:
+            scan = engine.analyze_agent(url, username, scan_mode=scan_mode)
+        except Exception as exc:  # noqa: BLE001
+            results.append({"username": username, "ok": False, "error": str(exc)})
+            continue
+
+        if scan.get("ok") and scan.get("data"):
+            persisted = _persistable(scan["data"], scan_mode)
+            scan["data"]["x_username"] = username  # display only
+            if persisted is not None:
+                _persist_leaderboard_and_report(lb_store, reports_dir, persisted)
+            results.append({"username": username, "ok": True, "data": scan["data"]})
+        else:
+            results.append({
+                "username": username, "ok": False,
+                "error": scan.get("error") or "scan failed",
+            })
+
+    return results
+
+
+@router.post("/api/scanner/lookup")
+async def scanner_lookup(
+    request: Request,
+    _gate: None = Depends(require_scanner_access),
+    _limit: None = Depends(rate_limited("scanner_lookup")),  # after the gate: 401s cost nothing
+    scraper: Optional[Callable[[str], dict]] = Depends(get_profile_scraper),
+) -> Any:
+    """Scrape basic X/Twitter profile info via Nitter.
+
+    Request body: { "username": "@agentname" }
+    Returns: { ok, data: { username, display_name, bio, website, avatar_url, ... } }
+    """
+    if not is_json_request(request):
+        return JSONResponse(
+            {"error": "Content-Type must be application/json"}, status_code=415
+        )
+    payload = await request.json()
+    username = (payload.get("username") or "").strip()
+    if not username:
+        return JSONResponse({"error": "'username' is required"}, status_code=422)
+
+    if scraper is None:
+        return JSONResponse({"error": "scanner module not available"}, status_code=503)
+
+    with slot("lookup"):
+        result = await run_in_threadpool(scraper, username)
+    return {"ok": True, "data": result}
+
+
+@router.post("/api/scanner/scan")
+async def scanner_scan(
+    request: Request,
+    _gate: None = Depends(require_scanner_access),
+    _limit: None = Depends(rate_limited("scanner_scan")),  # after the gate: 401s cost nothing
+    engine: Optional[Any] = Depends(get_scanner_engine),
+    lb_store: LeaderboardStore = Depends(get_leaderboard_store),
+    reports_dir: Path = Depends(get_reports_dir),
+) -> Any:
+    """Heuristic website security analysis mapped to acpsec checks.
+
+    Request body: { url, agent_name?, username?, scan_mode?, scraped?, x_bio? }
+    Returns: { ok, data: <dashboard wire format> } or { ok: false, error }.
+    On success, upserts the leaderboard and saves the full report — both
+    best-effort (a store failure never breaks the scan), both server-derived.
+    """
+    if not is_json_request(request):
+        return JSONResponse(
+            {"error": "Content-Type must be application/json"}, status_code=415
+        )
+    payload    = await request.json()
+    url        = (payload.get("url") or "").strip()
+    agent_name = (payload.get("agent_name") or "").strip()
+    username   = (payload.get("username")   or "").strip()
+    scan_mode  = (payload.get("scan_mode")  or "root").strip().lower()
+    # `scraped` is True only when the X profile was successfully fetched via
+    # Nitter — used by the UI to decide whether to render the @handle.
+    scraped    = bool(payload.get("scraped", False))
+
+    if scan_mode not in ("root", "exact"):
+        scan_mode = "root"
+
+    if engine is None:
+        return JSONResponse({"error": "scanner module not available"}, status_code=503)
+
+    with slot("scan"):
+        return await run_in_threadpool(
+            _scan_and_persist, engine, payload, url, agent_name, username, scan_mode,
+            scraped, lb_store, reports_dir,
+        )
 
 
 @router.post("/api/scanner/bulk")
@@ -230,26 +304,8 @@ async def scanner_bulk(
     if engine is None:
         return JSONResponse({"error": "scanner module not available"}, status_code=503)
 
-    results = []
-    for i, username in enumerate(usernames):
-        if i > 0:
-            time.sleep(BULK_SCAN_DELAY_SECONDS)  # throttle between scans
-
-        url = _BULK_URL_TEMPLATE.format(username=username)
-        try:
-            scan = engine.analyze_agent(url, username, scan_mode=scan_mode)
-        except Exception as exc:  # noqa: BLE001
-            results.append({"username": username, "ok": False, "error": str(exc)})
-            continue
-
-        if scan.get("ok") and scan.get("data"):
-            scan["data"]["x_username"] = username
-            _persist_leaderboard_and_report(lb_store, reports_dir, scan["data"])
-            results.append({"username": username, "ok": True, "data": scan["data"]})
-        else:
-            results.append({
-                "username": username, "ok": False,
-                "error": scan.get("error") or "scan failed",
-            })
-
+    with slot("scan"):
+        results = await run_in_threadpool(
+            _scan_batch, engine, usernames, scan_mode, lb_store, reports_dir
+        )
     return {"ok": True, "count": len(results), "results": results}

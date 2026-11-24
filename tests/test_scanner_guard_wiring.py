@@ -15,7 +15,7 @@ import pytest
 import requests
 
 from acpsec_api import net_guard, scanner, scanner_lookup
-from acpsec_api.deps import get_leaderboard_store, get_reports_dir, get_scan_store_path
+from acpsec_api.deps import get_leaderboard_store, get_reports_dir
 from acpsec_api.leaderboard_store import LeaderboardStore
 
 
@@ -169,9 +169,8 @@ def fastapi_app_client(tmp_path: Path, monkeypatch):
     lb_store = LeaderboardStore(path=tmp_path / "leaderboard.json")
     app.dependency_overrides[get_leaderboard_store] = lambda: lb_store
     app.dependency_overrides[get_reports_dir] = lambda: tmp_path / "reports"
-    app.dependency_overrides[get_scan_store_path] = lambda: tmp_path / "scan_store.json"
     try:
         yield TestClient(app), lb_store
     finally:
-        for dep in (get_leaderboard_store, get_reports_dir, get_scan_store_path):
+        for dep in (get_leaderboard_store, get_reports_dir):
             app.dependency_overrides.pop(dep, None)

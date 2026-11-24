@@ -17,7 +17,9 @@ from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
+from acpsec_api.concurrency import slot
 from acpsec_api.deps import get_onchain_checker
 from acpsec_api.rate_limit import rate_limited
 from acpsec_api.scanner_auth import require_scanner_access
@@ -59,5 +61,6 @@ async def onchain_check(
         )
 
     rpc_url = os.environ.get("BASE_RPC_URL", "").strip() or None
-    result = checker(wallet, rpc_url=rpc_url)
+    with slot("onchain"):  # blocking RPC: threadpool, capped
+        result = await run_in_threadpool(checker, wallet, rpc_url=rpc_url)
     return {"ok": True, "data": result}

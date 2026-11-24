@@ -47,11 +47,18 @@ class RateLimit:
 
 
 # A scan is ~30 outbound fetches and up to 45 s of work; /bulk is up to 10 scans.
+# B20: the frontend fires /api/b20/scan once per form submit (a mutation, never
+# retried), each scan is dozens of RPC calls against the shared provider quota;
+# /api/b20/preflight is not used by the frontend at all (integrations only) and
+# costs a handful of eth_calls — hence a looser per-client allowance.
 LIMITS = {
     "scanner_lookup": RateLimit(per_client=20, global_limit=120, window=60),
     "scanner_scan": RateLimit(per_client=10, global_limit=60, window=60),
     "scanner_bulk": RateLimit(per_client=2, global_limit=6, window=600),
     "onchain_check": RateLimit(per_client=20, global_limit=120, window=60),
+    "b20_scan": RateLimit(per_client=10, global_limit=60, window=60),
+    "b20_preflight": RateLimit(per_client=30, global_limit=300, window=60),
+    "leaderboard_auth": RateLimit(per_client=10, global_limit=100, window=60),
 }
 
 

@@ -50,12 +50,13 @@ def test_upsert_still_persists_a_rated_scan(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.upsert({
         "agent_name": "Good Agent",
+        "scan_url": "https://good.example/",
         "score_pct": 82,
         "controls": [{"ctrl": "AUTH-01", "severity": "CRITICAL", "status": "fail"}],
     })
     agents = store.load()["agents"]
     assert len(agents) == 1
-    assert agents[0]["name"] == "Good Agent"
+    assert agents[0]["name"] == "good.example"  # identity = scanned host
     assert agents[0]["score"] == 82
     assert agents[0]["tier"] == "SECURE"
 
@@ -64,6 +65,7 @@ def test_upsert_persists_explicit_rated_true(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.upsert({
         "agent_name": "Rated Agent",
+        "scan_url": "https://rated.example/",
         "rated": True,
         "score_pct": 55,
         "controls": [],

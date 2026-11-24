@@ -58,6 +58,30 @@ deliberate fix), not omissions.
    Railway API). Flask keeps `SameSite=Lax`; not-Secure. Env-overridable for local
    dev via `ACPSEC_COOKIE_SAMESITE` / `ACPSEC_COOKIE_SECURE`.
    (`acpsec_api/sessions.py`, `test_auth_correct_parity`, `test_cookie_*`.)
+3. **Per-visitor score** — `GET/POST/DELETE /api/score` and `POST /api/score/manual`
+   work on the caller's own slot, bound to a server-minted HttpOnly `score_session`
+   cookie (same SameSite/Secure policy as `lb_session`; unknown cookie values are
+   never adopted). In memory, LRU/TTL-bounded (1000 slots, 24 h); no
+   `data/score_store.json`. Bodies are unchanged; a visitor without a slot gets the
+   empty state. The frontend already treats this as the "server session score".
+   (`acpsec_api/store.py`, `routers/score.py`, `test_score_session.py`.)
+4. **Leaderboard/report identity = the scanned host** — `/scan` and `/bulk`
+   persist only the engine's own result: the entry is the one bound to the host of
+   the final `scan_url` (`scan_host`, `www.` folded; curated name/handle kept), a
+   new host gets an entry named after it. Client-supplied `agent_name`,
+   `username`, `scraped` and `x_bio` are echoed in the response but never stored;
+   `scan_mode: "exact"` scans are never persisted. The write-only
+   `data/scan_store.json` is gone. (`leaderboard_store.py`, `routers/scanner.py`,
+   `test_scan_persistence.py`.)
+5. **Blocking work off the event loop, capped** — scan, lookup, bulk, on-chain
+   and B20 work runs in the threadpool under per-kind caps (scan/bulk 3,
+   lookup 4, onchain 4, b20 4); a full cap answers
+   `503 {"ok": false, "error": "server busy — retry shortly"}` + `Retry-After: 5`.
+   `/api/health` is async. (`acpsec_api/concurrency.py`, `test_concurrency.py`.)
+6. **Request bodies capped at 1 MiB** — `413 {"ok": false, "error": "request body
+   too large"}`, with or without `Content-Length`. (`acpsec_api/body_limit.py`.)
+7. **`GET /api/report` is read-only** (no longer creates the reports directory);
+   leaderboard sessions are pruned on create and bounded (10 000).
 
 ## Cross-endpoint consistency notes
 
@@ -130,9 +154,17 @@ request input and are not routed through the guard.
 | `POST /api/scanner/scan` | 10 | 60 | 60 s |
 | `POST /api/scanner/bulk` | 2 | 6 | 600 s |
 | `POST /api/onchain/check` | 20 | 120 | 60 s |
+| `POST /api/b20/scan` | 10 | 60 | 60 s |
+| `POST /api/b20/preflight` | 30 | 300 | 60 s |
+| `POST /api/leaderboard/auth` | 10 | 100 | 60 s |
+
+B20 numbers follow the frontend: `/api/b20/scan` fires once per form submit (a
+mutation, never retried) and each scan is dozens of RPC calls on the shared
+provider quota; `/api/b20/preflight` is not called by the frontend at all
+(integrations) and is a handful of `eth_call`s, hence looser.
 
 Exceeded → `429 {"ok": false, "error": "rate limit exceeded — retry later"}`
-with `Retry-After` (seconds). Counted after the scanner gate (a 401 costs
-nothing); denied requests are not counted. Client identity: Railway's
+with `Retry-After` (seconds). Counted after the scanner gate where there is one
+(a 401 costs nothing); denied requests are not counted. Client identity: Railway's
 edge-set `X-Real-IP` on Railway (IPv6 grouped by /64), the TCP peer elsewhere;
 `X-Forwarded-For` is never read. In-memory, per process (`acpsec_api/rate_limit.py`).

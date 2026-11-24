@@ -28,8 +28,12 @@ router = APIRouter()
 
 
 @router.get("/api/health")
-def health() -> dict[str, object]:
-    """Lightweight liveness probe — used by Railway healthchecks and uptime monitors."""
+async def health() -> dict[str, object]:
+    """Lightweight liveness probe — used by Railway healthchecks and uptime monitors.
+
+    ``async`` on purpose: it does no I/O, so it runs on the event loop and needs
+    no threadpool worker — it answers even while every worker is busy.
+    """
     return {
         "ok": True,
         "service": "acp-sec-dashboard",

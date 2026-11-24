@@ -52,6 +52,7 @@ class _BulkStubEngine:
             "error": None,
             "data": {
                 "agent_name": agent_name,
+                "scan_url": f"https://{agent_name}.example/",
                 "score_pct": 82,
                 "controls": [
                     {"ctrl": "AUTH-01", "severity": "CRITICAL", "status": "fail"},
@@ -71,7 +72,7 @@ def _no_sleep(monkeypatch) -> None:
 
 def test_bulk_denied_no_auth(scan_client, monkeypatch) -> None:
     monkeypatch.setenv("SCANNER_TOKEN", "sekret")
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_BulkStubEngine())
     resp = client.post("/api/scanner/bulk", json={"usernames": ["alpha", "beta"]})
     assert resp.status_code == 401
@@ -83,7 +84,7 @@ def test_bulk_denied_no_auth(scan_client, monkeypatch) -> None:
 def test_bulk_success_multiple(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
     _no_sleep(monkeypatch)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_BulkStubEngine())
 
     resp = client.post(
@@ -109,7 +110,7 @@ def test_bulk_success_multiple(scan_client, monkeypatch) -> None:
 
 def test_bulk_count_limit(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_BulkStubEngine())
     eleven = [f"agent{i}" for i in range(11)]
     resp = client.post("/api/scanner/bulk", json={"usernames": eleven})
@@ -123,7 +124,7 @@ def test_bulk_count_limit(scan_client, monkeypatch) -> None:
 
 def test_bulk_empty_list(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_BulkStubEngine())
     resp = client.post("/api/scanner/bulk", json={"usernames": []})
     assert resp.status_code == 422
@@ -133,7 +134,7 @@ def test_bulk_empty_list(scan_client, monkeypatch) -> None:
 def test_bulk_all_falsy_filtered_to_empty(scan_client, monkeypatch) -> None:
     # Falsy entries are filtered before the empty check -> same 422 as [].
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_BulkStubEngine())
     resp = client.post("/api/scanner/bulk", json={"usernames": ["", None]})
     assert resp.status_code == 422
@@ -147,7 +148,7 @@ def test_bulk_per_item_failure(scan_client, monkeypatch) -> None:
     # continue and surface a per-item error for the two failures.
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
     _no_sleep(monkeypatch)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_BulkStubEngine(fail_for=["beta"], raise_for=["gamma"]))
 
     resp = client.post(
@@ -176,7 +177,7 @@ def test_bulk_per_item_failure(scan_client, monkeypatch) -> None:
 def test_bulk_writes_per_item(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
     _no_sleep(monkeypatch)
-    make, lb_store, reports_dir, _scan = scan_client
+    make, lb_store, reports_dir = scan_client
     # beta fails -> no leaderboard entry / report for it.
     client = make(_BulkStubEngine(fail_for=["beta"]))
 
@@ -186,23 +187,24 @@ def test_bulk_writes_per_item(scan_client, monkeypatch) -> None:
     )
     assert resp.status_code == 200
 
-    # Reports written only for the two successful items.
-    assert (reports_dir / "alpha.json").exists()
-    assert (reports_dir / "gamma.json").exists()
-    assert not (reports_dir / "beta.json").exists()
-    assert json.loads((reports_dir / "alpha.json").read_text())["agent_name"] == "alpha"
+    # Reports written only for the two successful items, keyed on the scanned
+    # host — the usernames are display-only.
+    assert (reports_dir / "alpha_example.json").exists()
+    assert (reports_dir / "gamma_example.json").exists()
+    assert not (reports_dir / "beta_example.json").exists()
+    assert json.loads((reports_dir / "alpha_example.json").read_text())["agent_name"] == "alpha.example"
 
     # Leaderboard upserted for the two successful items only.
     board = lb_store.load()
     ids = {a["id"] for a in board["agents"]}
-    assert ids == {"alpha", "gamma"}
+    assert ids == {"alpha_example", "gamma_example"}
 
 
 # --- Contract / error paths ----------------------------------------------
 
 def test_bulk_not_json(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_BulkStubEngine())
     resp = client.post(
         "/api/scanner/bulk", content="x", headers={"Content-Type": "text/plain"}
@@ -215,7 +217,7 @@ def test_bulk_engine_unavailable(scan_client, monkeypatch) -> None:
     # Non-empty, within-limit list but engine None -> 503 (engine check runs
     # after the empty/limit checks).
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(None)
     resp = client.post("/api/scanner/bulk", json={"usernames": ["alpha"]})
     assert resp.status_code == 503
