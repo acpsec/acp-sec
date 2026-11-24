@@ -3,8 +3,8 @@
 Exposes providers consumed by routers via FastAPI's ``Depends``. Tests override
 these (``app.dependency_overrides``) to inject isolated, temp-backed instances.
 
-Group 2 continues filling this in (config, acpsec scorer access). For 2.3a it
-provides the singleton ScoreStore backing the score read endpoints.
+Process-wide singletons (``lru_cache``): the per-visitor score store, the
+leaderboard store and the leaderboard session store.
 """
 
 from __future__ import annotations
@@ -17,25 +17,17 @@ from typing import Any, Callable, Optional
 from acpsec_api.leaderboard_store import LeaderboardStore
 from acpsec_api.scanner_lookup import SCRAPER_AVAILABLE, scrape_x_profile
 from acpsec_api.sessions import LbSessions
-from acpsec_api.store import ScoreStore
+from acpsec_api.store import SessionScoreStore
 
 # Default reports directory (data/reports), holding the seeded report files
 # read by /api/report.
 DEFAULT_REPORTS_DIR = Path(__file__).resolve().parent.parent / "data" / "reports"
 
-# Default last-scan store file (data/scan_store.json).
-# Write-only (nothing reads it); replicated for side-effect parity.
-DEFAULT_SCAN_STORE = Path(__file__).resolve().parent.parent / "data" / "scan_store.json"
-
 
 @lru_cache
-def get_score_store() -> ScoreStore:
-    """Process-wide ScoreStore singleton (default disk-backed path).
-
-    ``lru_cache`` gives one shared instance so the in-memory cache persists
-    across requests — matching Flask's module-level ``_current_score``.
-    """
-    return ScoreStore()
+def get_score_store() -> SessionScoreStore:
+    """Process-wide per-visitor score store (one slot per score_session cookie)."""
+    return SessionScoreStore()
 
 
 @lru_cache
@@ -78,11 +70,6 @@ def get_scanner_engine() -> Optional[Any]:
         return scanner
     except ImportError:
         return None
-
-
-def get_scan_store_path() -> Path:
-    """Path for the best-effort last-scan write. Overridden in tests."""
-    return DEFAULT_SCAN_STORE
 
 
 def get_onchain_checker() -> Optional[Callable[..., dict]]:

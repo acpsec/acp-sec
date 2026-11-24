@@ -17,6 +17,8 @@ from acpsec_api.scanner_auth import (
 )
 from acpsec_api.routers import b20, health, leaderboard, onchain, scanner, score
 from acpsec_api.rate_limit import RateLimited, rate_limited_handler
+from acpsec_api.concurrency import ServerBusy, server_busy_handler
+from acpsec_api.body_limit import MAX_BODY_BYTES, BodySizeLimit
 
 # --- CORS (Task 2.8) ------------------------------------------------------
 # Credentialed CORS (cookie auth) forbids a wildcard origin, so the allowlist is
@@ -54,6 +56,8 @@ app = FastAPI(
     version="0.5.0",
 )
 
+# Body cap first so CORS (added next, hence outermost) also decorates its 413.
+app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -77,3 +81,5 @@ app.include_router(b20.router)
 
 # Per-client rate limits on the scanner/on-chain endpoints render as a flat 429.
 app.add_exception_handler(RateLimited, rate_limited_handler)
+# A full concurrency cap on blocking outbound work renders as a flat 503.
+app.add_exception_handler(ServerBusy, server_busy_handler)

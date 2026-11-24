@@ -3,12 +3,17 @@
 Contracts (from dashboard/serve.py):
     GET    /api/score  empty      -> 200 {"ok": False, "data": None}
     GET    /api/score  populated  -> 200 {"ok": True,  "data": <dict>}
-    DELETE /api/score             -> 200 {"ok": True}   (clears memory + file)
+    DELETE /api/score             -> 200 {"ok": True}   (clears the caller's slot)
+
+Per-visitor since the global slot was removed: seeding goes through a minted
+session whose cookie the client then carries (see test_score_session.py).
     GET    /api/controls          -> 200 {source, acpsec_available, checks, asf_controls}
 
 """
 
 from __future__ import annotations
+
+from acpsec_api.routers.score import SCORE_SESSION_COOKIE
 
 
 _SAMPLE_SCORE = {
@@ -30,9 +35,15 @@ def test_get_score_empty_state(isolated_client) -> None:
     assert resp.json() == {"ok": False, "data": None}
 
 
+def _seed_visitor(client, store, data) -> None:
+    sid = store.new_session()
+    store.set(sid, data)
+    client.cookies.set(SCORE_SESSION_COOKIE, sid, domain="testserver.local")  # cookiejar: dotless host → .local
+
+
 def test_get_score_populated(isolated_client) -> None:
     client, store = isolated_client
-    store.set(_SAMPLE_SCORE)
+    _seed_visitor(client, store, _SAMPLE_SCORE)
     resp = client.get("/api/score")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True, "data": _SAMPLE_SCORE}
@@ -40,7 +51,7 @@ def test_get_score_populated(isolated_client) -> None:
 
 def test_delete_score(isolated_client) -> None:
     client, store = isolated_client
-    store.set(_SAMPLE_SCORE)
+    _seed_visitor(client, store, _SAMPLE_SCORE)
 
     resp = client.delete("/api/score")
     assert resp.status_code == 200

@@ -18,14 +18,13 @@ from acpsec_api.deps import (
     get_leaderboard_store,
     get_profile_scraper,
     get_reports_dir,
-    get_scan_store_path,
     get_scanner_engine,
     get_score_store,
 )
 from acpsec_api.leaderboard_store import LeaderboardStore
 from acpsec_api.main import app as fastapi_app
 from acpsec_api.sessions import LbSessions
-from acpsec_api.store import ScoreStore
+from acpsec_api.store import SessionScoreStore
 
 
 @pytest.fixture(autouse=True)
@@ -43,22 +42,22 @@ def fastapi_client() -> TestClient:
 
 
 @pytest.fixture
-def temp_store(tmp_path: Path) -> ScoreStore:
-    """A ScoreStore backed by a throwaway temp file (never the real store)."""
-    return ScoreStore(path=tmp_path / "score_store.json")
+def temp_store() -> SessionScoreStore:
+    """A fresh, isolated per-visitor score store (never the process singleton)."""
+    return SessionScoreStore()
 
 
 @pytest.fixture
-def isolated_client(temp_store: ScoreStore):
-    """FastAPI TestClient whose ScoreStore dependency is overridden with a
-    temp-backed store, so score-read tests never touch the real score store
-    (data/score_store.json).
+def isolated_client(temp_store: SessionScoreStore):
+    """FastAPI TestClient whose score store is overridden with a fresh one.
 
-    Yields ``(client, temp_store)`` so tests can seed the store directly.
+    https base URL so the (default ``Secure``) score_session cookie round-trips
+    — one client = one visitor. Yields ``(client, temp_store)`` so tests can
+    seed a visitor's slot directly (mint a session, set the cookie).
     """
     fastapi_app.dependency_overrides[get_score_store] = lambda: temp_store
     try:
-        yield TestClient(fastapi_app), temp_store
+        yield TestClient(fastapi_app, base_url="https://testserver"), temp_store
     finally:
         fastapi_app.dependency_overrides.pop(get_score_store, None)
 
@@ -113,28 +112,25 @@ def scan_client(tmp_path: Path):
     run / network), plus the leaderboard store, reports dir, and scan-store path
     with temp-backed instances so nothing touches the real dashboard files.
 
-    Yields ``(make, lb_store, reports_dir, scan_store_path)``.
+    Yields ``(make, lb_store, reports_dir)``.
     """
     lb_store = LeaderboardStore(path=tmp_path / "leaderboard.json")
     reports_dir = tmp_path / "reports"
-    scan_store_path = tmp_path / "scan_store.json"
     _sentinel = object()
 
     def _make(engine=_sentinel):
         fastapi_app.dependency_overrides[get_leaderboard_store] = lambda: lb_store
         fastapi_app.dependency_overrides[get_reports_dir] = lambda: reports_dir
-        fastapi_app.dependency_overrides[get_scan_store_path] = lambda: scan_store_path
         if engine is not _sentinel:
             fastapi_app.dependency_overrides[get_scanner_engine] = lambda: engine
         return TestClient(fastapi_app)
 
     try:
-        yield _make, lb_store, reports_dir, scan_store_path
+        yield _make, lb_store, reports_dir
     finally:
         for dep in (
             get_leaderboard_store,
             get_reports_dir,
-            get_scan_store_path,
             get_scanner_engine,
         ):
             fastapi_app.dependency_overrides.pop(dep, None)

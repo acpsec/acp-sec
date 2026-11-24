@@ -5,6 +5,7 @@ dashboard/serve.py:
     GET  /api/leaderboard          open; sorted board with movement + rank
     GET  /api/report/{agent_id}    read-only full-scan report from REPORTS_DIR
     POST /api/leaderboard/auth     password check → in-memory session cookie
+                                   (rate limited per client: 429)
 
 Scanner-side writes (_upsert_leaderboard_entry / _save_report) are Task 2.5 —
 NOT ported here.
@@ -24,6 +25,7 @@ from fastapi.responses import JSONResponse
 
 from acpsec_api.deps import get_lb_sessions, get_leaderboard_store, get_reports_dir
 from acpsec_api.leaderboard_store import LeaderboardStore
+from acpsec_api.rate_limit import rate_limited
 from acpsec_api.sessions import (
     LB_SESSION_COOKIE,
     LB_SESSION_MAX_AGE,
@@ -80,7 +82,9 @@ def get_leaderboard(
 
 @router.post("/api/leaderboard/auth")
 async def leaderboard_auth(
-    request: Request, sessions: LbSessions = Depends(get_lb_sessions)
+    request: Request,
+    _limit: None = Depends(rate_limited("leaderboard_auth")),  # bounds password guessing
+    sessions: LbSessions = Depends(get_lb_sessions),
 ) -> Any:
     """Validate the leaderboard password and issue a session cookie."""
     password = os.environ.get("LEADERBOARD_PASSWORD", "")
@@ -128,13 +132,12 @@ def get_report(
     Reports live in data/reports/{agent_id}.json — written scanner-side.
     404 with a friendly message when no report exists.
     """
-    # Normalise: strip @ and lowercase, same as _leaderboard_key()
+    # Normalise to the entry-id charset [a-z0-9_] (ids are also report file names).
     safe_id = re.sub(r"[^a-z0-9_]", "", (agent_id or "").lower().replace("-", "_"))
     if not safe_id:
         return JSONResponse({"ok": False, "error": "invalid agent id"}, status_code=400)
 
-    reports_dir.mkdir(parents=True, exist_ok=True)  # matches Flask _report_path
-    path = reports_dir / f"{safe_id}.json"
+    path = reports_dir / f"{safe_id}.json"  # read-only: never creates the directory
     if not path.exists():
         return JSONResponse(
             {

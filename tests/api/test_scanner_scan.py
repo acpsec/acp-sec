@@ -44,6 +44,7 @@ def _ok_result() -> dict:
         "error": None,
         "data": {
             "agent_name": "Test Agent",
+            "scan_url": "https://agent.example/",  # engine's final URL = leaderboard identity
             "score_pct": 82,
             "controls": [
                 {"ctrl": "AUTH-01", "severity": "CRITICAL", "status": "fail"},
@@ -99,7 +100,7 @@ _VALID_BODY = {"url": "https://agent.example", "agent_name": "Test Agent"}
 
 def test_scan_denied_no_auth(scan_client, monkeypatch) -> None:
     monkeypatch.setenv("SCANNER_TOKEN", "sekret")
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_StubEngine(_ok_result()))
     resp = client.post("/api/scanner/scan", json=_VALID_BODY)
     assert resp.status_code == 401
@@ -110,45 +111,50 @@ def test_scan_denied_no_auth(scan_client, monkeypatch) -> None:
 
 def test_scan_success_writes_report(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, reports_dir, _scan = scan_client
+    make, _lb, reports_dir = scan_client
     client = make(_StubEngine(_ok_result()))
 
     resp = client.post("/api/scanner/scan", json=_VALID_BODY)
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
-    # Report written to injected temp dir at leaderboard_key("Test Agent").
-    report_file = reports_dir / "test_agent.json"
+    # Report written under the scanned host's entry id, named after the host —
+    # the client's agent_name is display-only (see test_scan_persistence.py).
+    report_file = reports_dir / "agent_example.json"
     assert report_file.exists()
     saved = json.loads(report_file.read_text())
-    assert saved["agent_name"] == "Test Agent"
+    assert saved["agent_name"] == "agent.example"
 
 
 def test_scan_success_upserts_leaderboard(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, lb_store, _reports, _scan = scan_client
+    make, lb_store, _reports = scan_client
     client = make(_StubEngine(_ok_result()))
 
     resp = client.post("/api/scanner/scan", json=_VALID_BODY)
     assert resp.status_code == 200
 
     board = lb_store.load()
-    agent = next(a for a in board["agents"] if a["id"] == "test_agent")
-    assert agent["name"] == "Test Agent"
+    agent = next(a for a in board["agents"] if a["id"] == "agent_example")
+    assert agent["name"] == "agent.example"
+    assert agent["scan_host"] == "agent.example"
     assert agent["score"] == 82
     assert agent["tier"] == "SECURE"  # 70-89 in the 6-band scheme
     assert agent["critical_fails"] == 1  # one CRITICAL fail in controls
     assert agent["previous_score"] == 82  # first sighting → no movement
 
 
-def test_scan_writes_scan_store(scan_client, monkeypatch) -> None:
-    monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, scan_store_path = scan_client
-    client = make(_StubEngine(_ok_result()))
+def test_scan_writes_no_global_last_scan_file(scan_client, monkeypatch, tmp_path) -> None:
+    # The Flask-era "last scan" file (data/scan_store.json) was global state that
+    # every scan overwrote and nothing read; it is gone.
+    import acpsec_api.deps as deps
 
+    monkeypatch.delenv("SCANNER_TOKEN", raising=False)
+    make, *_ = scan_client
+    client = make(_StubEngine(_ok_result()))
     client.post("/api/scanner/scan", json=_VALID_BODY)
-    assert scan_store_path.exists()
-    assert json.loads(scan_store_path.read_text())["agent_name"] == "Test Agent"
+    assert not hasattr(deps, "get_scan_store_path")
+    assert not any(p.name == "scan_store.json" for p in tmp_path.rglob("*"))
 
 
 # --- #81: unrated scans must NOT be ranked -------------------------------
@@ -157,7 +163,7 @@ def test_scan_unrated_result_not_persisted_to_leaderboard(scan_client, monkeypat
     """An unreachable/unrated scan (rated=False) must never reach the leaderboard —
     else a merely-unreachable site is publicly ranked COMPROMISED (#81)."""
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, lb_store, reports_dir, _scan = scan_client
+    make, lb_store, reports_dir = scan_client
     client = make(_StubEngine(_unrated_result()))
 
     resp = client.post(
@@ -181,7 +187,7 @@ def test_scan_engine_failure_returns_422(scan_client, monkeypatch) -> None:
     # No explicit SSRF scheme gate in Flask: an unreachable/invalid URL makes the
     # engine return ok:False, and the handler returns that verbatim at 422.
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, lb_store, reports_dir, scan_store_path = scan_client
+    make, lb_store, reports_dir = scan_client
     fail = {"ok": False, "error": "Could not fetch website: boom", "suggestion": None}
     client = make(_StubEngine(fail))
 
@@ -189,7 +195,6 @@ def test_scan_engine_failure_returns_422(scan_client, monkeypatch) -> None:
     assert resp.status_code == 422
     assert resp.json() == fail
     # No side-effect writes on the failure path.
-    assert not scan_store_path.exists()
     assert not (reports_dir / "test_agent.json").exists()
     assert lb_store.load()["agents"] == []
 
@@ -197,7 +202,7 @@ def test_scan_engine_failure_returns_422(scan_client, monkeypatch) -> None:
 def test_scan_empty_url_returns_200(scan_client, monkeypatch) -> None:
     """No url → 200 partial result, not 422."""
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_StubEngine(_partial_result()))
     resp = client.post("/api/scanner/scan", json={"agent_name": "No Website Agent"})
     assert resp.status_code == 200
@@ -207,7 +212,7 @@ def test_scan_empty_url_returns_200(scan_client, monkeypatch) -> None:
 def test_scan_empty_url_result_is_partial(scan_client, monkeypatch) -> None:
     """No url → rated:false in the response data."""
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_StubEngine(_partial_result()))
     resp = client.post("/api/scanner/scan", json={"agent_name": "No Website Agent"})
     data = resp.json()["data"]
@@ -219,7 +224,7 @@ def test_scan_empty_url_result_is_partial(scan_client, monkeypatch) -> None:
 def test_scan_empty_url_calls_engine_with_empty_string(scan_client, monkeypatch) -> None:
     """Router must forward empty url to the engine (not reject it internally)."""
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     stub = _StubEngine(_partial_result())
     client = make(stub)
     client.post("/api/scanner/scan", json={"agent_name": "No Website Agent"})
@@ -230,7 +235,7 @@ def test_scan_empty_url_calls_engine_with_empty_string(scan_client, monkeypatch)
 
 def test_scan_not_json(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_StubEngine(_ok_result()))
     resp = client.post(
         "/api/scanner/scan", content="x", headers={"Content-Type": "text/plain"}
@@ -241,7 +246,7 @@ def test_scan_not_json(scan_client, monkeypatch) -> None:
 
 def test_scan_engine_unavailable(scan_client, monkeypatch) -> None:
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(None)  # engine None → 503
     resp = client.post("/api/scanner/scan", json=_VALID_BODY)
     assert resp.status_code == 503
@@ -251,7 +256,7 @@ def test_scan_engine_unavailable(scan_client, monkeypatch) -> None:
 def test_scan_enriches_data_fields(scan_client, monkeypatch) -> None:
     # scraped=True → x_username set + x_handle_verified True.
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
-    make, _lb, _reports, _scan = scan_client
+    make, _lb, _reports = scan_client
     client = make(_StubEngine(_ok_result()))
     resp = client.post(
         "/api/scanner/scan",

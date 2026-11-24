@@ -1,65 +1,94 @@
-"""Score state store — FastAPI port of the Flask persistence model.
+"""Per-visitor dashboard score slots.
 
-Mirrors ``dashboard/serve.py`` exactly: a single in-memory cache backed by a
-JSON file on disk. Reads prefer the in-memory value and fall back to disk;
-writes are write-through (memory + disk); clear drops both.
+Backs the dashboard's "server session score" (GET/POST/DELETE /api/score):
+one slot per visitor, bound to a server-minted session id that travels in an
+HttpOnly cookie (see ``acpsec_api.routers.score``). There is no shared slot, so
+a visitor can only ever read, replace or clear their own score.
 
-Persistence semantics (matched to Flask):
-  * get()   -> in-memory value if set, else load from disk, else None
-  * set()   -> update memory AND write to disk (best-effort, silent on OSError)
-  * clear() -> memory None AND unlink the file (missing_ok)
+In memory and bounded: at most ``max_sessions`` slots (least recently used
+evicted first), each expiring ``ttl_seconds`` after its last write. Nothing is
+written to disk. This replaces the Flask-parity model of one process-wide score
+written through to data/score_store.json.
 
-Thread-safety: Flask used a module-level dict with NO locking, so concurrent
-requests could interleave read/modify/write. This class replicates that
-behaviour (no locks) rather than papering over it — the gap is inherited, not
-introduced. Revisit if/when the API moves to a real concurrent workload.
+Thread-safe: the score routes may run in the threadpool concurrently.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import secrets
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable
 from typing import Any
 
-# Default path: <repo>/acpsec_api/store.py → <repo>/data/score_store.json
-_DEFAULT_STORE_FILE = Path(__file__).resolve().parent.parent / "data" / "score_store.json"
+SESSION_TTL_SECONDS = 86400  # one day — also the cookie Max-Age
+MAX_SESSIONS = 1000
 
 
-class ScoreStore:
-    """In-memory cache + JSON-file persistence for the current score."""
+class SessionScoreStore:
+    """session id → score dict, LRU- and TTL-bounded."""
 
-    def __init__(self, path: Path | str | None = None) -> None:
-        self.path = Path(path) if path is not None else _DEFAULT_STORE_FILE
-        self._current: dict[str, Any] | None = None
+    def __init__(
+        self,
+        max_sessions: int = MAX_SESSIONS,
+        ttl_seconds: float = SESSION_TTL_SECONDS,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        self.max_sessions = max_sessions
+        self.ttl_seconds = ttl_seconds
+        self._clock = clock or time.monotonic
+        self._lock = threading.Lock()
+        # sid -> [expires_at, data]; ordered oldest → most recently written
+        self._slots: OrderedDict[str, list[Any]] = OrderedDict()
 
-    def get(self) -> dict[str, Any] | None:
-        """Return the current score: memory → disk → None."""
-        return self._current or self._load_from_disk()
+    def new_session(self) -> str:
+        """Mint an empty slot and return its (unguessable) id."""
+        sid = secrets.token_urlsafe(24)
+        with self._lock:
+            self._slots[sid] = [self._clock() + self.ttl_seconds, None]
+            while len(self._slots) > self.max_sessions:
+                self._slots.popitem(last=False)
+        return sid
 
-    def set(self, data: dict[str, Any]) -> None:
-        """Cache and persist a score (write-through)."""
-        self._current = data
-        self._save_to_disk(data)
+    def has(self, sid: str | None) -> bool:
+        with self._lock:
+            return self._live(sid) is not None
 
-    def clear(self) -> None:
-        """Drop the in-memory cache and remove the persisted file."""
-        self._current = None
-        if self.path.exists():
-            self.path.unlink(missing_ok=True)
+    def get(self, sid: str | None) -> dict[str, Any] | None:
+        with self._lock:
+            slot = self._live(sid)
+            return slot[1] if slot else None
 
-    # -- disk helpers (match Flask's best-effort, silent-on-failure behaviour) --
+    def set(self, sid: str | None, data: dict[str, Any]) -> bool:
+        """Write ``sid``'s slot. False if the id was never minted (or expired)."""
+        with self._lock:
+            slot = self._live(sid)
+            if slot is None:
+                return False
+            slot[0] = self._clock() + self.ttl_seconds
+            slot[1] = data
+            self._slots.move_to_end(sid)  # type: ignore[arg-type]
+            return True
 
-    def _load_from_disk(self) -> dict[str, Any] | None:
-        if self.path.exists():
-            try:
-                return json.loads(self.path.read_text())
-            except (json.JSONDecodeError, OSError):
-                return None
-        return None
+    def clear(self, sid: str | None) -> None:
+        with self._lock:
+            slot = self._live(sid)
+            if slot is not None:
+                slot[1] = None
 
-    def _save_to_disk(self, data: dict[str, Any]) -> None:
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(data, indent=2, default=str))
-        except OSError:
-            pass
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._slots)
+
+    def _live(self, sid: str | None) -> list[Any] | None:
+        """The slot for ``sid`` if it exists and has not expired (lock held)."""
+        if not sid:
+            return None
+        slot = self._slots.get(sid)
+        if slot is None:
+            return None
+        if slot[0] <= self._clock():
+            del self._slots[sid]
+            return None
+        return slot
