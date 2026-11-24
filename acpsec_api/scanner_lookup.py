@@ -6,6 +6,7 @@ instances, headers, timeout, and error paths as the Flask reference.
 
 ``SCRAPER_AVAILABLE`` mirrors Flask's ``_get_scanner() is not None`` check: the
 scraper is usable only when its runtime deps (requests, bs4) import cleanly.
+Fetches go through ``acpsec_api.net_guard.guarded_get`` (SSRF guard).
 """
 
 from __future__ import annotations
@@ -16,8 +17,9 @@ from typing import Any
 from urllib.parse import urljoin
 
 try:
-    import requests
     from bs4 import BeautifulSoup
+
+    from acpsec_api.net_guard import guarded_get  # needs requests
 
     SCRAPER_AVAILABLE = True
 except ImportError:
@@ -83,8 +85,10 @@ def scrape_x_profile(username: str) -> dict[str, Any]:
     for instance in _ordered_instances():
         try:
             url  = f"{instance}/{username}"
-            resp = requests.get(url, headers=BROWSER_HEADERS,
-                                timeout=DEFAULT_TIMEOUT, allow_redirects=True)
+            # Guarded: the instance list is fixed, but where an instance
+            # redirects to is not.
+            resp = guarded_get(url, headers=BROWSER_HEADERS, timeout=DEFAULT_TIMEOUT,
+                               total_timeout=2 * DEFAULT_TIMEOUT)
             if resp.status_code != 200:
                 instance_errors.append({
                     "instance": instance,

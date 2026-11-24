@@ -139,3 +139,12 @@ def scan_client(tmp_path: Path):
         ):
             fastapi_app.dependency_overrides.pop(dep, None)
 
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Every test starts with empty rate-limit windows (state is process-wide)."""
+    from acpsec_api.rate_limit import reset_rate_limits
+
+    reset_rate_limits()
+    yield
+    reset_rate_limits()

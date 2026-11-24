@@ -16,6 +16,7 @@ from acpsec_api.scanner_auth import (
     scanner_not_configured_handler,
 )
 from acpsec_api.routers import b20, health, leaderboard, onchain, scanner, score
+from acpsec_api.rate_limit import RateLimited, rate_limited_handler
 
 # --- CORS (Task 2.8) ------------------------------------------------------
 # Credentialed CORS (cookie auth) forbids a wildcard origin, so the allowlist is
@@ -73,3 +74,6 @@ app.include_router(leaderboard.router)
 app.include_router(scanner.router)
 app.include_router(onchain.router)
 app.include_router(b20.router)
+
+# Per-client rate limits on the scanner/on-chain endpoints render as a flat 429.
+app.add_exception_handler(RateLimited, rate_limited_handler)

@@ -3,7 +3,8 @@
 TDD RED phase: all tests below fail before the fetch_status / instance_errors /
 nitter_instance / cache changes are added to scanner_lookup.py.
 
-No live network — requests.get is always monkeypatched.
+No live network — the guarded fetch (scanner_lookup.guarded_get) is always
+monkeypatched.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def test_all_failed_fetch_status(monkeypatch):
     def _raise(*_a, **_kw):
         raise ConnectionError("timed out")
 
-    monkeypatch.setattr(scanner_lookup.requests, "get", _raise)
+    monkeypatch.setattr(scanner_lookup, "guarded_get", _raise)
 
     result = scrape_x_profile("agentx")
 
@@ -76,7 +77,7 @@ def test_all_failed_fetch_status(monkeypatch):
 def test_blocked_fetch_status(monkeypatch):
     """All instances return HTTP 200 but no profile elements → fetch_status='blocked'."""
     monkeypatch.setattr(
-        scanner_lookup.requests, "get",
+        scanner_lookup, "guarded_get",
         lambda *_a, **_kw: _fake_resp(200, _EMPTY_HTML),
     )
 
@@ -90,7 +91,7 @@ def test_blocked_fetch_status(monkeypatch):
 def test_ok_fetch_status(monkeypatch):
     """First instance returns valid profile HTML → fetch_status='ok'."""
     monkeypatch.setattr(
-        scanner_lookup.requests, "get",
+        scanner_lookup, "guarded_get",
         lambda *_a, **_kw: _fake_resp(200, _PROFILE_HTML),
     )
 
@@ -112,7 +113,7 @@ def test_cache_last_good_instance(monkeypatch):
         called_urls.append(url)
         return _fake_resp(200, _PROFILE_HTML)
 
-    monkeypatch.setattr(scanner_lookup.requests, "get", _record)
+    monkeypatch.setattr(scanner_lookup, "guarded_get", _record)
 
     scrape_x_profile("agentx")
 
@@ -127,7 +128,7 @@ def test_cache_updated_on_success(monkeypatch):
             return _fake_resp(200, _PROFILE_HTML)
         return _fake_resp(200, _EMPTY_HTML)
 
-    monkeypatch.setattr(scanner_lookup.requests, "get", _selective)
+    monkeypatch.setattr(scanner_lookup, "guarded_get", _selective)
 
     scrape_x_profile("agentx")
 
@@ -140,7 +141,7 @@ def test_no_fabrication_on_failure(monkeypatch):
     def _raise(*_a, **_kw):
         raise ConnectionError("refused")
 
-    monkeypatch.setattr(scanner_lookup.requests, "get", _raise)
+    monkeypatch.setattr(scanner_lookup, "guarded_get", _raise)
 
     result = scrape_x_profile("agentx")
 
@@ -160,7 +161,7 @@ def test_mixed_failures_classified_blocked(monkeypatch):
             raise ConnectionError("refused")
         return _fake_resp(200, _EMPTY_HTML)
 
-    monkeypatch.setattr(scanner_lookup.requests, "get", _mixed)
+    monkeypatch.setattr(scanner_lookup, "guarded_get", _mixed)
 
     result = scrape_x_profile("agentx")
 

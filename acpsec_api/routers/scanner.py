@@ -1,7 +1,8 @@
 """Scanner router.
 
 Contract-identical ports from dashboard/serve.py, gated by the reusable
-``require_scanner_access`` dependency (SSRF protection):
+``require_scanner_access`` dependency (SSRF protection) and then rate limited
+per client (``acpsec_api.rate_limit``; 429 when exceeded):
     - POST /api/scanner/lookup  (2.5a)  — Nitter profile scrape
     - POST /api/scanner/scan    (2.5b-i) — heuristic scan + leaderboard/report writes
 
@@ -26,6 +27,7 @@ from acpsec_api.deps import (
     get_scanner_engine,
 )
 from acpsec_api.leaderboard_store import LeaderboardStore
+from acpsec_api.rate_limit import rate_limited
 from acpsec_api.reports import write_report
 from acpsec_api.scanner_auth import require_scanner_access
 from acpsec_api.utils import is_json_request
@@ -74,6 +76,7 @@ def _persist_leaderboard_and_report(
 async def scanner_lookup(
     request: Request,
     _gate: None = Depends(require_scanner_access),
+    _limit: None = Depends(rate_limited("scanner_lookup")),  # after the gate: 401s cost nothing
     scraper: Optional[Callable[[str], dict]] = Depends(get_profile_scraper),
 ) -> Any:
     """Scrape basic X/Twitter profile info via Nitter.
@@ -101,6 +104,7 @@ async def scanner_lookup(
 async def scanner_scan(
     request: Request,
     _gate: None = Depends(require_scanner_access),
+    _limit: None = Depends(rate_limited("scanner_scan")),  # after the gate: 401s cost nothing
     engine: Optional[Any] = Depends(get_scanner_engine),
     lb_store: LeaderboardStore = Depends(get_leaderboard_store),
     reports_dir: Path = Depends(get_reports_dir),
@@ -182,6 +186,7 @@ async def scanner_scan(
 async def scanner_bulk(
     request: Request,
     _gate: None = Depends(require_scanner_access),
+    _limit: None = Depends(rate_limited("scanner_bulk")),  # after the gate: 401s cost nothing
     engine: Optional[Any] = Depends(get_scanner_engine),
     lb_store: LeaderboardStore = Depends(get_leaderboard_store),
     reports_dir: Path = Depends(get_reports_dir),

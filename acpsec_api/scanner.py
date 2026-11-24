@@ -24,6 +24,8 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from acpsec_api.net_guard import BlockedDestination, guarded_get
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -38,9 +40,11 @@ NITTER_INSTANCES = [
 DEFAULT_TIMEOUT = 9   # seconds per request
 SCRAPE_TIMEOUT  = 12
 
-# Tight (connect, read) tuple for the primary site fetch — hard 15 s ceiling
+# Tight (connect, read) tuple for the primary site fetch, plus a hard total
+# budget across redirects and the body (enforced by net_guard).
 FETCH_CONNECT_TIMEOUT = 5
 FETCH_READ_TIMEOUT    = 10
+FETCH_TOTAL_TIMEOUT   = 15
 
 # Status codes / page signals that mean "authentication required".
 # Kept tight — landing pages of OAuth-using products (e.g. claude.ai with its
@@ -159,8 +163,8 @@ def scrape_x_profile(username: str) -> dict[str, Any]:
     for instance in NITTER_INSTANCES:
         try:
             url  = f"{instance}/{username}"
-            resp = requests.get(url, headers=BROWSER_HEADERS,
-                                timeout=DEFAULT_TIMEOUT, allow_redirects=True)
+            resp = guarded_get(url, headers=BROWSER_HEADERS, timeout=DEFAULT_TIMEOUT,
+                               total_timeout=2 * DEFAULT_TIMEOUT)
             if resp.status_code != 200:
                 continue
 
@@ -245,25 +249,31 @@ def _fetch_website(url: str) -> tuple[requests.Response | None,
                                        str             | None]:
     """GET `url` and return (response, soup, warning_msg).
 
-    Uses a (connect, read) timeout tuple so a slow server cannot stall the
-    request past the read budget. Total ceiling ≈ 15 s.
+    Goes through net_guard (SSRF checks on every hop, capped body). A
+    (connect, read) timeout tuple bounds each socket wait and
+    FETCH_TOTAL_TIMEOUT the whole fetch. The verify=False retry after a TLS
+    failure takes the same guarded path.
     """
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     t = (FETCH_CONNECT_TIMEOUT, FETCH_READ_TIMEOUT)
     try:
-        resp = requests.get(url, headers=BROWSER_HEADERS,
-                            timeout=t, allow_redirects=True, verify=True)
+        resp = guarded_get(url, headers=BROWSER_HEADERS, timeout=t,
+                           total_timeout=FETCH_TOTAL_TIMEOUT, verify=True)
         return resp, BeautifulSoup(resp.text, "html.parser"), None
+    except BlockedDestination as exc:
+        return None, None, f"Blocked by outbound fetch policy: {exc}"
     except requests.exceptions.Timeout:
         return None, None, "Request timed out (>15 s) — server unresponsive"
     except requests.exceptions.SSLError:
         try:
-            resp = requests.get(url, headers=BROWSER_HEADERS,
-                                timeout=t, allow_redirects=True, verify=False)
+            resp = guarded_get(url, headers=BROWSER_HEADERS, timeout=t,
+                               total_timeout=FETCH_TOTAL_TIMEOUT, verify=False)
             return (resp,
                     BeautifulSoup(resp.text, "html.parser"),
                     "SSL certificate verification failed — connection unverified")
+        except BlockedDestination as exc:
+            return None, None, f"Blocked by outbound fetch policy: {exc}"
         except Exception as exc:
             return None, None, str(exc)
     except Exception as exc:
@@ -471,10 +481,14 @@ def _base_url(url: str) -> str:
 
 
 def _quick_get(url: str, timeout: int = 6) -> requests.Response | None:
-    """GET a URL with a short timeout and any response is fine (no exception)."""
+    """GET a URL with a short timeout and any response is fine (no exception).
+
+    Guarded like the primary fetch (probe URLs derive from the target's final,
+    post-redirect URL); a refused destination simply yields None.
+    """
     try:
-        return requests.get(url, headers=BROWSER_HEADERS,
-                            timeout=timeout, allow_redirects=True, verify=True)
+        return guarded_get(url, headers=BROWSER_HEADERS, timeout=timeout,
+                           total_timeout=2 * timeout, verify=True)
     except Exception:
         return None
 
