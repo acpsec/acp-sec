@@ -25,7 +25,9 @@ jobs:
           body="$(curl -fsS --retry 3 --retry-delay 5 --max-time 20 "$URL")"
           echo "health = $body"
           fail=""
-          for key in acpsec_available scanner_protected leaderboard_configured; do
+          # scanner_configured: a fail-closed prod is scanner_protected even with
+          # NO token, so only this flag still catches a missing SCANNER_TOKEN.
+          for key in acpsec_available scanner_protected scanner_configured leaderboard_configured; do
             v="$(printf '%s' "$body" | jq -r --arg k "$key" '.[$k]')"
             [ "$v" = "true" ] || fail="$fail $key=$v"
           done

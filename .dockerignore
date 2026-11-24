@@ -1,21 +1,26 @@
+# Unlike .gitignore, Docker anchors every pattern at the context ROOT: `.env`
+# excludes ./.env but NOT ./acpsec_api/.env, and the Dockerfile's `COPY . .`
+# would bake that nested file into the image. Patterns meant to apply at any
+# depth therefore use `**/` (which also matches at the root).
+
 # ── Secrets — must never enter the build context ──────────────────────────
-.env
-.env.*
-.env.local
-.env.local.save
-.env.save
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/secrets/
 
 # ── Git and CI ─────────────────────────────────────────────────────────────
 .git
 .github
 
 # ── Python caches and build artifacts ─────────────────────────────────────
-__pycache__
-*.py[cod]
-*$py.class
-*.so
-*.egg-info
-*.egg
+**/__pycache__
+**/*.py[cod]
+**/*$py.class
+**/*.so
+**/*.egg-info
+**/*.egg
 build/
 dist/
 .venv/
@@ -29,6 +34,8 @@ env/
 .coverage
 .coverage.*
 htmlcov/
+# JS tooling for the ACP provider (acpsec/acp_provider/node_modules) — never runtime.
+**/node_modules/
 
 # ── Tests and dev-only requirements ───────────────────────────────────────
 tests/
@@ -49,16 +56,16 @@ examples/
 # ── Runtime-generated state (gitignored; exclude defensively) ─────────────
 data/scan_store.json
 data/score_store.json
-*.log
-*.db
-*.sqlite
+**/*.log
+**/*.db
+**/*.sqlite
 
 # ── Editor and OS ─────────────────────────────────────────────────────────
-.DS_Store
+**/.DS_Store
 .vscode/
 .idea/
-*.swp
-*~
+**/*.swp
+**/*~
 
 # ── Tool and deploy configs (not needed inside container) ─────────────────
 .railwayignore
