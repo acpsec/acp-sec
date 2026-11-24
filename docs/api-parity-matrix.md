@@ -77,7 +77,8 @@ deliberate fix), not omissions.
 
 | Variable | Consumed by | Default | Purpose |
 |----------|-------------|---------|---------|
-| `SCANNER_TOKEN` | scanner + onchain gate (`scanner_auth.py`) | unset/blank = **open** (dev) | SSRF gate: allow only a matching `X-Scanner-Token` header (constant-time). The Flask same-origin shortcut (Origin host == Host) was removed — both headers are client-forgeable. |
+| `SCANNER_TOKEN` | scanner + onchain gate (`scanner_auth.py`) | unset/blank = **open** (dev); **503 fail-closed** in production | SSRF gate: allow only a matching `X-Scanner-Token` header (constant-time). The Flask same-origin shortcut (Origin host == Host) was removed — both headers are client-forgeable. |
+| `RAILWAY_ENVIRONMENT_NAME` | scanner gate (`scanner_auth.is_production`) | injected by Railway | `production` (stripped, case-insensitive) arms fail-closed: no usable `SCANNER_TOKEN` ⟹ gated endpoints return `503`, never open. Never set by hand; chosen over an app flag because a forgotten flag would fail open. |
 | `LEADERBOARD_PASSWORD` | `/api/leaderboard/auth` | unset = **open** | Password for the leaderboard session cookie. |
 | `ANTHROPIC_API_KEY` | `/api/chat/sentryagent` (`get_anthropic_client`) | unset → 503 | Server-side Claude key; never sent by the client. |
 | `BASE_RPC_URL` | `/api/onchain/check` | unset → `mainnet.base.org` default | Optional Base RPC endpoint override. |

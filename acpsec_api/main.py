@@ -11,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from acpsec_api.scanner_auth import (
     ScannerAccessDenied,
+    ScannerNotConfigured,
     scanner_access_denied_handler,
+    scanner_not_configured_handler,
 )
 from acpsec_api.routers import b20, health, leaderboard, onchain, scanner, score
 
@@ -60,8 +62,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Scanner gate denials render as Flask's flat 401 body (not FastAPI's {"detail"}).
+# Scanner gate denials render as Flask's flat 401 body (not FastAPI's {"detail"});
+# production without a SCANNER_TOKEN fails closed — same flat shape, as a 503.
 app.add_exception_handler(ScannerAccessDenied, scanner_access_denied_handler)
+app.add_exception_handler(ScannerNotConfigured, scanner_not_configured_handler)
 
 app.include_router(health.router)
 app.include_router(score.router)
