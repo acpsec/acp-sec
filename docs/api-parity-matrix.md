@@ -118,3 +118,18 @@ A refused target scans as UNRATED (`rated: false`) with `fetch_warning`
 `"Blocked by outbound fetch policy: …"`, so it is never ranked or archived.
 Operator-configured RPC endpoints (`BASE_RPC_URL`, `B20_RPC_URL_*`) are not
 request input and are not routed through the guard.
+
+## Rate limits
+
+| Endpoint | Per client | Global | Window |
+|---|---|---|---|
+| `POST /api/scanner/lookup` | 20 | 120 | 60 s |
+| `POST /api/scanner/scan` | 10 | 60 | 60 s |
+| `POST /api/scanner/bulk` | 2 | 6 | 600 s |
+| `POST /api/onchain/check` | 20 | 120 | 60 s |
+
+Exceeded → `429 {"ok": false, "error": "rate limit exceeded — retry later"}`
+with `Retry-After` (seconds). Counted after the scanner gate (a 401 costs
+nothing); denied requests are not counted. Client identity: Railway's
+edge-set `X-Real-IP` on Railway (IPv6 grouped by /64), the TCP peer elsewhere;
+`X-Forwarded-For` is never read. In-memory, per process (`acpsec_api/rate_limit.py`).

@@ -1,7 +1,8 @@
 """On-chain router.
 
 Contract-identical port from dashboard/serve.py, gated by the reusable
-``require_scanner_access`` dependency (SSRF/RPC-abuse protection):
+``require_scanner_access`` dependency (SSRF/RPC-abuse protection), then rate
+limited per client (``acpsec_api.rate_limit``; 429 when exceeded):
     - POST /api/onchain/check (2.6) — best-effort Base-mainnet ACP registration
 
 Read-only: hits public Base RPC and returns the result. No state writes. The
@@ -18,6 +19,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from acpsec_api.deps import get_onchain_checker
+from acpsec_api.rate_limit import rate_limited
 from acpsec_api.scanner_auth import require_scanner_access
 from acpsec_api.utils import is_json_request
 
@@ -28,6 +30,7 @@ router = APIRouter()
 async def onchain_check(
     request: Request,
     _gate: None = Depends(require_scanner_access),
+    _limit: None = Depends(rate_limited("onchain_check")),  # after the gate: 401s cost nothing
     checker: Optional[Callable[..., dict]] = Depends(get_onchain_checker),
 ) -> Any:
     """Best-effort on-chain ACP registration check.

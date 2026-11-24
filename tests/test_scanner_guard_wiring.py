@@ -161,8 +161,11 @@ def fastapi_app_client(tmp_path: Path, monkeypatch):
 
     from acpsec_api.main import app
 
+    from acpsec_api.rate_limit import reset_rate_limits
+
     monkeypatch.delenv("SCANNER_TOKEN", raising=False)
     monkeypatch.delenv("RAILWAY_ENVIRONMENT_NAME", raising=False)
+    reset_rate_limits()
     lb_store = LeaderboardStore(path=tmp_path / "leaderboard.json")
     app.dependency_overrides[get_leaderboard_store] = lambda: lb_store
     app.dependency_overrides[get_reports_dir] = lambda: tmp_path / "reports"
