@@ -1,0 +1,123 @@
+name: uptime
+
+# Liveness monitor for the public production surface:
+#   api-prod  https://api-prod-production-7ef5.up.railway.app/api/health
+#   frontend  https://acpsec.app
+# Complements prod-smoke.yml (weekly env-PRECONDITION check of the /api/health
+# booleans): this one only asks "is it up?", every 15 minutes.
+#
+# State lives in ONE open issue labelled `uptime`:
+#   any target down → open it, or refresh the open one. Its body always shows
+#                     the latest check; a comment is added only when the set of
+#                     failing targets / status codes changes, so a long outage
+#                     does not post a comment every 15 minutes.
+#   all targets up  → close it with a recovery comment.
+# The job stays green while targets are down: the issue is the alert, and a red
+# scheduled run would email the workflow's last editor every 15 minutes.
+# Auth: GITHUB_TOKEN with issues:write only — no other secrets.
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # public repo → Actions minutes are free (use */30 if private)
+  workflow_dispatch: {}       # on-demand
+
+permissions:
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    if: github.repository == 'acpsec/acp-sec'   # don't run on forks
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      LABEL: uptime
+      TITLE: "🔴 uptime: production endpoint down"
+      TARGETS: >-
+        https://api-prod-production-7ef5.up.railway.app/api/health
+        https://acpsec.app
+    steps:
+      - name: Probe targets (3 attempts each, 20 s timeout)
+        id: probe
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/uptime-report.md"
+          errf="$RUNNER_TEMP/curl.err"
+          printf '| Target | Result | HTTP | Attempts | Detail |\n|---|---|---|---|---|\n' > "$report"
+          down=0
+          signature=""
+          for url in $TARGETS; do
+            for attempt in 1 2 3; do
+              detail=""
+              if ! code="$(curl -sS -o /dev/null -w '%{http_code}' --location --max-redirs 3 \
+                  --max-time 20 -A 'acpsec-uptime (+https://github.com/acpsec/acp-sec)' \
+                  "$url" 2>"$errf")"; then
+                detail="$(head -n1 "$errf" | tr '|' '/' | cut -c1-120)"
+              fi
+              code="${code:-000}"
+              case "$code" in 2??) break ;; esac
+              if [ "$attempt" -lt 3 ]; then sleep 15; fi
+            done
+            case "$code" in
+              2??)
+                echo "| $url | ✅ up | $code | $attempt | |" >> "$report" ;;
+              *)
+                echo "| $url | 🔴 down | $code | $attempt | $detail |" >> "$report"
+                echo "::warning title=uptime::DOWN $url (HTTP $code after $attempt attempts)"
+                down=$((down + 1))
+                signature="$signature $url=$code" ;;
+            esac
+          done
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          echo "down=$down" >> "$GITHUB_OUTPUT"
+          echo "signature=${signature# }" >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh the uptime issue
+        if: steps.probe.outputs.down != '0'
+        env:
+          SIGNATURE: ${{ steps.probe.outputs.signature }}
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          now="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          body="$RUNNER_TEMP/issue-body.md"
+          {
+            echo "<!-- uptime-signature: $SIGNATURE -->"
+            echo "Opened by \`.github/workflows/uptime.yml\`; it closes itself once every target is up again."
+            echo
+            echo "**Last check:** $now ([run]($run_url))"
+            echo
+            cat "$RUNNER_TEMP/uptime-report.md"
+          } > "$body"
+          have_label="$(gh label list --search "$LABEL" --json name \
+            --jq "map(select(.name == \"$LABEL\")) | length")"
+          if [ "$have_label" = "0" ]; then
+            gh label create "$LABEL" --color B60205 --description "Automated uptime monitor (uptime.yml)"
+          fi
+          num="$(gh issue list --label "$LABEL" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -z "$num" ]; then
+            gh issue create --title "$TITLE" --label "$LABEL" --body-file "$body"
+          else
+            prev="$(gh issue view "$num" --json body --jq '.body' \
+              | sed -n 's/^<!-- uptime-signature: \(.*\) -->$/\1/p' | head -n1)"
+            gh issue edit "$num" --body-file "$body"
+            if [ "$prev" != "$SIGNATURE" ]; then
+              gh issue comment "$num" --body "Status changed at $now: \`${prev:-unknown}\` → \`$SIGNATURE\` ([run]($run_url))"
+            fi
+          fi
+
+      - name: Close the uptime issue on recovery
+        if: steps.probe.outputs.down == '0'
+        run: |
+          set -euo pipefail
+          num="$(gh issue list --label "$LABEL" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$num" ]; then
+            run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            gh issue close "$num" --comment "✅ All targets up again at $(date -u '+%Y-%m-%d %H:%M UTC') ([run]($run_url))."
+          else
+            echo "All targets up; no open uptime issue."
+          fi
