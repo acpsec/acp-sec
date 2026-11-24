@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 
 
 def _parse_cookie(header: str) -> dict:
@@ -191,6 +192,36 @@ def test_auth_wrong_password(leaderboard_client, monkeypatch) -> None:
     assert resp.status_code == 401
     assert resp.json() == {"ok": False, "error": "Incorrect password"}
     assert "set-cookie" not in resp.headers
+
+
+@pytest.mark.parametrize(
+    "raw_body",
+    [
+        '{"password": 123}',
+        '{"password": null}',
+        '{"password": ["s3cret"]}',
+        '{"password": "\\ud800"}',  # lone surrogate: must not crash the compare
+    ],
+)
+def test_auth_odd_password_types_rejected(leaderboard_client, monkeypatch, raw_body) -> None:
+    # The constant-time compare only accepts str; anything else is a clean 401.
+    monkeypatch.setenv("LEADERBOARD_PASSWORD", "s3cret")
+    client, _store, _reports, _sessions = leaderboard_client
+    resp = client.post(
+        "/api/leaderboard/auth",
+        content=raw_body,
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code == 401
+    assert resp.json() == {"ok": False, "error": "Incorrect password"}
+
+
+def test_auth_non_ascii_password(leaderboard_client, monkeypatch) -> None:
+    # compare_digest rejects non-ASCII str — the router compares bytes instead.
+    monkeypatch.setenv("LEADERBOARD_PASSWORD", "pässwörd")
+    client, _store, _reports, _sessions = leaderboard_client
+    assert client.post("/api/leaderboard/auth", json={"password": "pässwörd"}).status_code == 200
+    assert client.post("/api/leaderboard/auth", json={"password": "passwort"}).status_code == 401
 
 
 # --- Cookie flag env configuration (Task 2.8) ----------------------------

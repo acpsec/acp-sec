@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.parse
 import urllib.request
 from typing import Any, Optional, TypedDict
 
@@ -60,6 +61,24 @@ class ACPCheckResult(TypedDict, total=False):
 def is_valid_eth_address(addr: str) -> bool:
     """Permissive 0x… 40-hex check.  No checksum validation."""
     return bool(_HEX40_RE.match(addr or ""))
+
+
+def _url_origin(url: str) -> str:
+    """``scheme://host[:port]`` of ``url`` — drops userinfo, path and query.
+
+    Provider RPC URLs often embed an API key in exactly those parts, and the
+    result dict is returned to API clients verbatim, so only the origin is
+    ever echoed back.
+    """
+    try:
+        p = urllib.parse.urlsplit(url)
+        host = p.hostname or ""
+        if ":" in host:  # IPv6 literal
+            host = f"[{host}]"
+        port = f":{p.port}" if p.port else ""
+    except ValueError:
+        return "(unparseable rpc url)"
+    return f"{p.scheme}://{host}{port}" if p.scheme and host else "(unparseable rpc url)"
 
 
 def _padded_topic(addr: str) -> str:
@@ -103,7 +122,7 @@ def check_acp_registration(
     out: ACPCheckResult = {
         "contract":   ACP_CORE_ADDRESS_BASE,
         "wallet":     wallet_address,
-        "rpc_url":    rpc_url or DEFAULT_BASE_RPC_URL,
+        "rpc_url":    _url_origin(rpc_url or DEFAULT_BASE_RPC_URL),
         "registered": None,
         "log_count":  0,
         "block_from": None,
@@ -154,5 +173,7 @@ def check_acp_registration(
         return out
 
     except Exception as exc:  # noqa: BLE001 — never raise
-        out["error"] = f"{type(exc).__name__}: {exc}"
+        # Some urllib errors (e.g. "unknown url type") quote the full URL —
+        # swap it for the origin so a keyed endpoint is not echoed back.
+        out["error"] = f"{type(exc).__name__}: {exc}".replace(rpc, out["rpc_url"])
         return out

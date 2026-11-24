@@ -77,18 +77,21 @@ deliberate fix), not omissions.
 
 | Variable | Consumed by | Default | Purpose |
 |----------|-------------|---------|---------|
-| `SCANNER_TOKEN` | scanner + onchain gate (`scanner_auth.py`) | unset = **open** (dev) | SSRF gate: allow same-origin browser requests or a matching `X-Scanner-Token` header. |
+| `SCANNER_TOKEN` | scanner + onchain gate (`scanner_auth.py`) | unset/blank = **open** (dev); **503 fail-closed** in production | SSRF gate: allow only a matching `X-Scanner-Token` header (constant-time). The Flask same-origin shortcut (Origin host == Host) was removed — both headers are client-forgeable. |
+| `RAILWAY_ENVIRONMENT_NAME` | scanner gate (`scanner_auth.is_production`) | injected by Railway | `production` (stripped, case-insensitive) arms fail-closed: no usable `SCANNER_TOKEN` ⟹ gated endpoints return `503`, never open. Never set by hand; chosen over an app flag because a forgotten flag would fail open. |
 | `LEADERBOARD_PASSWORD` | `/api/leaderboard/auth` | unset = **open** | Password for the leaderboard session cookie. |
 | `ANTHROPIC_API_KEY` | `/api/chat/sentryagent` (`get_anthropic_client`) | unset → 503 | Server-side Claude key; never sent by the client. |
 | `BASE_RPC_URL` | `/api/onchain/check` | unset → `mainnet.base.org` default | Optional Base RPC endpoint override. |
 | `CORS_ALLOWED_ORIGINS` | CORS middleware (`main.py`) | built-in static list | Comma-separated allowlist override (staging/prod lock-down). |
-| `CORS_ALLOWED_ORIGIN_REGEX` | CORS middleware | Vercel-preview regex | Override the preview-deploy origin regex. |
+| `CORS_ALLOWED_ORIGIN_REGEX` | CORS middleware | none | Opt-in origin regex. Only for hostnames you control — `*.vercel.app` names are first-come across all Vercel accounts. |
 | `ACPSEC_COOKIE_SAMESITE` | `lb_session` cookie (`sessions.py`) | `none` | Local-dev override (`lax` for plain-http localhost). |
 | `ACPSEC_COOKIE_SECURE` | `lb_session` cookie | `true` | Local-dev override (`false` for plain-http localhost). |
 
 Static CORS allowlist default: `https://acpsec.app`, `http://localhost:3000`,
-`http://127.0.0.1:3000`, plus the Vercel-preview regex
-`https://acpsec-web-[a-z0-9-]+\.vercel\.app`. Credentialed CORS never uses `*`.
+`http://127.0.0.1:3000`; no origin regex unless `CORS_ALLOWED_ORIGIN_REGEX` is
+set. (The former default `https://acpsec-web-[a-z0-9-]+\.vercel\.app` admitted
+any Vercel project named `acpsec-web-*` — attacker-registrable — and matched
+none of our real projects.) Credentialed CORS never uses `*`.
 
 ## Cutover checklist (reminder — executed in later groups)
 
@@ -100,3 +103,36 @@ Static CORS allowlist default: `https://acpsec.app`, `http://localhost:3000`,
 - [ ] **Production env** must set `SCANNER_TOKEN`, `LEADERBOARD_PASSWORD`,
       `ANTHROPIC_API_KEY`, and serve over **HTTPS** (`SameSite=None` requires
       `Secure`); set `CORS_ALLOWED_ORIGINS` to the real frontend origin(s).
+
+## Outbound fetch policy (scan engine)
+
+Every scan-engine fetch whose URL or host derives from request input
+(`/api/scanner/scan`, `/bulk`, `/lookup` — the primary page, every probe, the
+login-wall retry, parent-org probes and Nitter) goes through
+`acpsec_api/net_guard.py`:
+
+- `http`/`https` on port 80 or 443 only
+- host names: no `localhost`/`*.localhost`, `*.internal` (incl. `*.railway.internal`), `*.local`, or single-label names
+- addresses: globally routable unicast only — judged on the address the socket actually dials (resolve once, vet every answer, dial the vetted address); any non-public answer refuses the host
+- redirects followed manually, at most 5, every hop re-checked; the `verify=False` TLS retry takes the same path
+- body capped at 5 MiB decoded; one total time budget per fetch (15 s for the primary page, 2× the per-request timeout for probes); environment proxies ignored
+
+A refused target scans as UNRATED (`rated: false`) with `fetch_warning`
+`"Blocked by outbound fetch policy: …"`, so it is never ranked or archived.
+Operator-configured RPC endpoints (`BASE_RPC_URL`, `B20_RPC_URL_*`) are not
+request input and are not routed through the guard.
+
+## Rate limits
+
+| Endpoint | Per client | Global | Window |
+|---|---|---|---|
+| `POST /api/scanner/lookup` | 20 | 120 | 60 s |
+| `POST /api/scanner/scan` | 10 | 60 | 60 s |
+| `POST /api/scanner/bulk` | 2 | 6 | 600 s |
+| `POST /api/onchain/check` | 20 | 120 | 60 s |
+
+Exceeded → `429 {"ok": false, "error": "rate limit exceeded — retry later"}`
+with `Retry-After` (seconds). Counted after the scanner gate (a 401 costs
+nothing); denied requests are not counted. Client identity: Railway's
+edge-set `X-Real-IP` on Railway (IPv6 grouped by /64), the TCP peer elsewhere;
+`X-Forwarded-For` is never read. In-memory, per process (`acpsec_api/rate_limit.py`).

@@ -3,7 +3,8 @@
 # Two jobs, no secrets:
 #   test          — runs the full test suite on push and PR to main.
 #   docker-build  — builds the image and fails if any secret VALUE was baked
-#                   into layer history. Graceful no-op until the Dockerfile
+#                   into layer history, or if a planted decoy secret FILE
+#                   survived .dockerignore into /app. Graceful no-op until the Dockerfile
 #                   lands (#48): when no Dockerfile is present it exits green so
 #                   the check can exist in branch protection ahead of the fix.
 name: CI
@@ -90,6 +91,19 @@ jobs:
             echo "No Dockerfile yet — skipping build cleanly (green)."
           fi
 
+      - name: Plant decoy secret files
+        # Regression test for .dockerignore: a CI checkout never contains real
+        # secret files, so plant harmless decoys — at the root AND nested, since
+        # Docker anchors bare patterns at the context root — and assert after
+        # the build that none of them reached the image.
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          for f in .env .env.production acpsec_api/.env data/.env.local \
+                   acpsec/secrets/decoy.txt decoy.pem acpsec/decoy.key; do
+            mkdir -p "$(dirname "$f")"
+            printf 'DECOY-NOT-A-SECRET\n' > "$f"
+          done
+
       - name: Build Docker image
         if: steps.check.outputs.exists == 'true'
         run: docker build . -t acpsec-ci-verify
@@ -107,3 +121,25 @@ jobs:
             exit 1
           fi
           echo "PASS: no secret values in image layers"
+
+      - name: Verify no secret files in the image filesystem
+        # Layer history only records build instructions — a secret FILE swept in
+        # by `COPY . .` never shows up there. Inspect /app itself: no decoy may
+        # survive .dockerignore, and the app must not run as root.
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          leaked="$(docker run --rm --entrypoint sh acpsec-ci-verify -c '
+            find /app \( -name ".env*" -o -name "*.pem" -o -name "*.key" -o -path "*/secrets/*" \) -print
+            grep -rl DECOY-NOT-A-SECRET /app 2>/dev/null || true
+          ')"
+          if [ -n "$leaked" ]; then
+            echo "FAIL: secret-shaped files reached the image:"
+            echo "$leaked"
+            exit 1
+          fi
+          uid="$(docker run --rm --entrypoint id acpsec-ci-verify -u)"
+          if [ "$uid" = "0" ]; then
+            echo "FAIL: container runs as root"
+            exit 1
+          fi
+          echo "PASS: no secret files in /app; container runs as uid $uid"

@@ -28,6 +28,14 @@ from acpsec_api.sessions import LbSessions
 from acpsec_api.store import ScoreStore
 
 
+@pytest.fixture(autouse=True)
+def _not_railway_production(monkeypatch) -> None:
+    """Hermetic env: a host that exports RAILWAY_ENVIRONMENT_NAME (e.g. under
+    ``railway run``) must not flip the scanner gate into fail-closed mode.
+    Tests that exercise production set it explicitly."""
+    monkeypatch.delenv("RAILWAY_ENVIRONMENT_NAME", raising=False)
+
+
 @pytest.fixture
 def fastapi_client() -> TestClient:
     """TestClient bound to the FastAPI app under migration."""
@@ -131,3 +139,12 @@ def scan_client(tmp_path: Path):
         ):
             fastapi_app.dependency_overrides.pop(dep, None)
 
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Every test starts with empty rate-limit windows (state is process-wide)."""
+    from acpsec_api.rate_limit import reset_rate_limits
+
+    reset_rate_limits()
+    yield
+    reset_rate_limits()
