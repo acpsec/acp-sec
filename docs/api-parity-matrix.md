@@ -100,3 +100,21 @@ Static CORS allowlist default: `https://acpsec.app`, `http://localhost:3000`,
 - [ ] **Production env** must set `SCANNER_TOKEN`, `LEADERBOARD_PASSWORD`,
       `ANTHROPIC_API_KEY`, and serve over **HTTPS** (`SameSite=None` requires
       `Secure`); set `CORS_ALLOWED_ORIGINS` to the real frontend origin(s).
+
+## Outbound fetch policy (scan engine)
+
+Every scan-engine fetch whose URL or host derives from request input
+(`/api/scanner/scan`, `/bulk`, `/lookup` — the primary page, every probe, the
+login-wall retry, parent-org probes and Nitter) goes through
+`acpsec_api/net_guard.py`:
+
+- `http`/`https` on port 80 or 443 only
+- host names: no `localhost`/`*.localhost`, `*.internal` (incl. `*.railway.internal`), `*.local`, or single-label names
+- addresses: globally routable unicast only — judged on the address the socket actually dials (resolve once, vet every answer, dial the vetted address); any non-public answer refuses the host
+- redirects followed manually, at most 5, every hop re-checked; the `verify=False` TLS retry takes the same path
+- body capped at 5 MiB decoded; one total time budget per fetch (15 s for the primary page, 2× the per-request timeout for probes); environment proxies ignored
+
+A refused target scans as UNRATED (`rated: false`) with `fetch_warning`
+`"Blocked by outbound fetch policy: …"`, so it is never ranked or archived.
+Operator-configured RPC endpoints (`BASE_RPC_URL`, `B20_RPC_URL_*`) are not
+request input and are not routed through the guard.
